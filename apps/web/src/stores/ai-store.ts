@@ -5,26 +5,49 @@ import type {
   AIGenerationResult, 
   GenerationHistoryItem,
   AspectRatio,
-  OutputFormat
+  OutputFormat,
+  AIMode,
+  VideoGenerationParams,
+  VideoGenerationResult,
+  VideoGenerationHistoryItem,
+  VideoDuration,
+  VideoResolution,
+  VideoAspectRatio
 } from "@/types/ai";
 import type { MediaFile } from "@/types/media";
-import { generateImage } from "@/lib/fal-client";
+import { generateImage, generateVideo } from "@/lib/fal-client";
 
 interface AIStore {
-  // State
+  // Mode
+  mode: AIMode;
+  
+  // Image generation state
   prompt: string;
   aspectRatio: AspectRatio;
   outputFormat: OutputFormat;
   isGenerating: boolean;
-  generationHistory: GenerationHistoryItem[];
   currentResult: AIGenerationResult | null;
   error: string | null;
-  // Image editing mode
   referenceImageUrls: string[];
-  // Track current project to clear history on project switch
+  
+  // Video generation state
+  videoPrompt: string;
+  videoAspectRatio: VideoAspectRatio;
+  videoDuration: VideoDuration;
+  videoResolution: VideoResolution;
+  generateAudio: boolean;
+  isGeneratingVideo: boolean;
+  currentVideoResult: VideoGenerationResult | null;
+  videoError: string | null;
+  videoReferenceImageUrl: string | null;
+  
+  // Track current project to clear session on project switch
   currentProjectId: string | null;
 
-  // Actions
+  // Mode actions
+  setMode: (mode: AIMode) => void;
+
+  // Image generation actions
   setPrompt: (prompt: string) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   setOutputFormat: (format: OutputFormat) => void;
@@ -32,28 +55,55 @@ interface AIStore {
   clearReferenceImages: () => void;
   generate: () => Promise<void>;
   addToTimeline: (imageUrl: string) => Promise<void>;
-  clearHistory: () => void;
   clearError: () => void;
+  
+  // Video generation actions
+  setVideoPrompt: (prompt: string) => void;
+  setVideoAspectRatio: (ratio: VideoAspectRatio) => void;
+  setVideoDuration: (duration: VideoDuration) => void;
+  setVideoResolution: (resolution: VideoResolution) => void;
+  setGenerateAudio: (generate: boolean) => void;
+  setVideoReferenceImage: (url: string | null) => void;
+  clearVideoReferenceImage: () => void;
+  generateVideo: () => Promise<void>;
+  addVideoToTimeline: (videoUrl: string) => Promise<void>;
+  clearVideoError: () => void;
+  
   clearProjectSession: (projectId: string | null) => void;
 }
-
-const MAX_HISTORY = 20;
 
 export const useAIStore = create<AIStore>()(
   persist(
     (set, get) => ({
       // Initial state
+      mode: "image",
+      
+      // Image generation state
       prompt: "",
       aspectRatio: "1:1",
       outputFormat: "jpeg",
       isGenerating: false,
-      generationHistory: [],
       currentResult: null,
       error: null,
       referenceImageUrls: [],
+      
+      // Video generation state
+      videoPrompt: "",
+      videoAspectRatio: "16:9",
+      videoDuration: "8s",
+      videoResolution: "720p",
+      generateAudio: true,
+      isGeneratingVideo: false,
+      currentVideoResult: null,
+      videoError: null,
+      videoReferenceImageUrl: null,
+      
       currentProjectId: null,
 
-      // Actions
+      // Mode actions
+      setMode: (mode) => set({ mode }),
+
+      // Image generation actions
       setPrompt: (prompt) => set({ prompt }),
       setAspectRatio: (ratio) => set({ aspectRatio: ratio }),
       setOutputFormat: (format) => set({ outputFormat: format }),
@@ -87,21 +137,17 @@ export const useAIStore = create<AIStore>()(
 
           const result = await generateImage(params);
           
-          const historyItem: GenerationHistoryItem = {
-            id: crypto.randomUUID(),
-            prompt: params.prompt,
-            params,
-            result,
-            timestamp: Date.now(),
-          };
-
-          set((state) => ({
-            currentResult: result,
-            generationHistory: [
-              historyItem,
-              ...state.generationHistory,
-            ].slice(0, MAX_HISTORY),
-          }));
+          // Clean up previous result's blob URLs
+          const { currentResult } = get();
+          if (currentResult) {
+            for (const image of currentResult.images) {
+              if (image.url && image.url.startsWith('blob:')) {
+                URL.revokeObjectURL(image.url);
+              }
+            }
+          }
+          
+          set({ currentResult: result });
         } catch (error) {
           console.error("AI generation failed:", error);
           set({ 
@@ -165,27 +211,200 @@ export const useAIStore = create<AIStore>()(
           const { currentTime } = usePlaybackStore.getState();
           const { addElementAtTime } = useTimelineStore.getState();
           addElementAtTime(added, currentTime);
+          
+          // Clear current result after successfully adding to timeline
+          const { currentResult } = get();
+          if (currentResult?.images.some(img => img.url === imageUrl)) {
+            for (const img of currentResult.images) {
+              if (img.url.startsWith('blob:')) {
+                URL.revokeObjectURL(img.url);
+              }
+            }
+            set({ currentResult: null });
+          }
         } catch (error) {
           console.error("Failed to add to timeline:", error);
           throw error;
         }
       },
 
-      clearHistory: () => set({ generationHistory: [] }),
       clearError: () => set({ error: null }),
       
+      // Video generation actions
+      setVideoPrompt: (videoPrompt) => set({ videoPrompt }),
+      setVideoAspectRatio: (videoAspectRatio) => set({ videoAspectRatio }),
+      setVideoDuration: (videoDuration) => set({ videoDuration }),
+      setVideoResolution: (videoResolution) => set({ videoResolution }),
+      setGenerateAudio: (generateAudio) => set({ generateAudio }),
+      setVideoReferenceImage: (url) => set({ videoReferenceImageUrl: url }),
+      clearVideoReferenceImage: () => set({ videoReferenceImageUrl: null }),
+
+      generateVideo: async () => {
+        const { videoPrompt, videoAspectRatio, videoDuration, videoResolution, generateAudio, videoReferenceImageUrl } = get();
+        
+        if (!videoPrompt.trim()) {
+          set({ videoError: "Please enter a prompt" });
+          return;
+        }
+
+        if (!videoReferenceImageUrl) {
+          set({ videoError: "Please select an image to animate" });
+          return;
+        }
+
+        set({ 
+          isGeneratingVideo: true, 
+          videoError: null, 
+          currentVideoResult: null,
+        });
+
+        try {
+          const params: VideoGenerationParams = {
+            prompt: videoPrompt.trim(),
+            image_url: videoReferenceImageUrl,
+            aspect_ratio: videoAspectRatio,
+            duration: videoDuration,
+            generate_audio: generateAudio,
+            resolution: videoResolution,
+          };
+
+          const result = await generateVideo(params);
+          
+          // Clean up previous result's blob URL
+          const { currentVideoResult } = get();
+          if (currentVideoResult && currentVideoResult.video.url.startsWith('blob:')) {
+            URL.revokeObjectURL(currentVideoResult.video.url);
+          }
+          
+          set({ currentVideoResult: result });
+        } catch (error) {
+          console.error("Video generation failed:", error);
+          set({ 
+            videoError: error instanceof Error ? error.message : "Video generation failed"
+          });
+        } finally {
+          set({ isGeneratingVideo: false });
+        }
+      },
+
+      addVideoToTimeline: async (videoUrl: string) => {
+        try {
+          const { useProjectStore } = await import("@/stores/project-store");
+          const { useMediaStore, generateVideoThumbnail } = await import("@/stores/media-store");
+          const { useTimelineStore } = await import("@/stores/timeline-store");
+          const { usePlaybackStore } = await import("@/stores/playback-store");
+
+          const { activeProject } = useProjectStore.getState();
+          if (!activeProject) {
+            throw new Error("No active project");
+          }
+
+          // Fetch the video to create file
+          const response = await fetch(videoUrl);
+          const blob = await response.blob();
+          const file = new File([blob], `ai-video-${Date.now()}.mp4`, {
+            type: "video/mp4",
+          });
+
+          // Create a single blob URL to use consistently
+          const blobUrl = URL.createObjectURL(file);
+
+          // Generate thumbnail and get video info (same as normal uploads)
+          const { thumbnailUrl, width, height } = await generateVideoThumbnail(file);
+          
+          // Get duration
+          const video = document.createElement("video");
+          video.preload = "metadata";
+          
+          const duration = await new Promise<number>((resolve, reject) => {
+            video.onloadedmetadata = () => {
+              const dur = video.duration;
+              // Clean up properly
+              video.pause();
+              video.removeAttribute('src');
+              video.load();
+              video.remove();
+              resolve(dur);
+            };
+            video.onerror = () => {
+              video.remove();
+              reject(new Error("Failed to load video metadata"));
+            };
+            video.src = blobUrl;
+          });
+
+          const mediaItem: Omit<MediaFile, "id"> = {
+            name: `AI Video: ${get().videoPrompt.slice(0, 30)}...`,
+            type: "video",
+            file,
+            url: blobUrl,
+            thumbnailUrl,
+            width,
+            height,
+            duration,
+            ephemeral: false,
+          };
+
+          const { addMediaFile } = useMediaStore.getState();
+          await addMediaFile(activeProject.id, mediaItem);
+
+          const added = useMediaStore
+            .getState()
+            .mediaFiles.find((m) => m.url === mediaItem.url);
+            
+          if (!added) {
+            throw new Error("Failed to add to media store");
+          }
+
+          const { currentTime } = usePlaybackStore.getState();
+          const { addElementAtTime } = useTimelineStore.getState();
+          addElementAtTime(added, currentTime);
+          
+          // Clear current result after successfully adding to timeline
+          const { currentVideoResult } = get();
+          if (currentVideoResult?.video.url === videoUrl) {
+            if (videoUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(videoUrl);
+            }
+            set({ currentVideoResult: null });
+          }
+        } catch (error) {
+          console.error("Failed to add video to timeline:", error);
+          throw error;
+        }
+      },
+
+      clearVideoError: () => set({ videoError: null }),
+      
       clearProjectSession: (projectId: string | null) => {
-        const { currentProjectId } = get();
+        const { currentProjectId, currentResult, currentVideoResult } = get();
         
         // If switching to a different project or closing project, clear the session
         if (currentProjectId !== projectId) {
+          // Clean up current results
+          if (currentResult) {
+            for (const image of currentResult.images) {
+              if (image.url && image.url.startsWith('blob:')) {
+                URL.revokeObjectURL(image.url);
+              }
+            }
+          }
+          
+          if (currentVideoResult && currentVideoResult.video.url.startsWith('blob:')) {
+            URL.revokeObjectURL(currentVideoResult.video.url);
+          }
+          
           set({
             currentProjectId: projectId,
+            mode: "image",
             currentResult: null,
-            generationHistory: [],
             prompt: "",
             error: null,
             referenceImageUrls: [],
+            currentVideoResult: null,
+            videoPrompt: "",
+            videoError: null,
+            videoReferenceImageUrl: null,
           });
         }
       },
@@ -195,6 +414,10 @@ export const useAIStore = create<AIStore>()(
       partialize: (state) => ({
         aspectRatio: state.aspectRatio,
         outputFormat: state.outputFormat,
+        videoAspectRatio: state.videoAspectRatio,
+        videoDuration: state.videoDuration,
+        videoResolution: state.videoResolution,
+        generateAudio: state.generateAudio,
       }),
     }
   )

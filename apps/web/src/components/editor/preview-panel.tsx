@@ -31,6 +31,7 @@ import { LayoutGuideOverlay } from "./layout-guide-overlay";
 import { Label } from "../ui/label";
 import { SocialsIcon } from "../icons";
 import { PLATFORM_LAYOUTS, type PlatformLayout } from "@/stores/editor-store";
+import { VideoPlayer } from "@/components/ui/video-player";
 
 interface ActiveElement {
   element: TimelineElement;
@@ -42,13 +43,14 @@ export function PreviewPanel() {
   const { tracks, getTotalDuration, updateTextElement } = useTimelineStore();
   const { mediaFiles } = useMediaStore();
   const { currentTime, toggle, setCurrentTime } = usePlaybackStore();
-  const { isPlaying, volume, muted } = usePlaybackStore();
+  const { isPlaying, volume, muted, previewQuality } = usePlaybackStore();
   const { activeProject } = useProjectStore();
   const { currentScene } = useSceneStore();
   const previewRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { getCachedFrame, cacheFrame, invalidateCache, preRenderNearbyFrames } =
     useFrameCache();
+  const prevQualityRef = useRef(previewQuality);
   const lastFrameTimeRef = useRef(0);
   const renderSeqRef = useRef(0);
   const offscreenCanvasRef = useRef<OffscreenCanvas | HTMLCanvasElement | null>(
@@ -293,6 +295,16 @@ export function PreviewPanel() {
 
   const activeElements = getActiveElements();
 
+  // Invalidate cache when preview quality changes
+  useEffect(() => {
+    if (prevQualityRef.current !== previewQuality) {
+      invalidateCache();
+      lastFrameTimeRef.current = -Infinity;
+      renderSeqRef.current++;
+      prevQualityRef.current = previewQuality;
+    }
+  }, [previewQuality, invalidateCache]);
+
   // Ensure first frame after mount/seek renders immediately
   useEffect(() => {
     const onSeek = () => {
@@ -473,13 +485,17 @@ export function PreviewPanel() {
       const mainCtx = canvas.getContext("2d");
       if (!mainCtx) return;
 
-      // Set canvas internal resolution to avoid blurry scaling
-      const displayWidth = Math.max(1, Math.floor(previewDimensions.width));
-      const displayHeight = Math.max(1, Math.floor(previewDimensions.height));
+      // Set canvas internal resolution with quality scaling for performance
+      // Lower quality = fewer pixels to render = better performance
+      const displayWidth = Math.max(1, Math.floor(previewDimensions.width * previewQuality));
+      const displayHeight = Math.max(1, Math.floor(previewDimensions.height * previewQuality));
       if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
         canvas.width = displayWidth;
         canvas.height = displayHeight;
       }
+
+      // Keep projectCanvasSize at full resolution - the renderer scales automatically
+      // Only the output canvas resolution changes for performance
 
       // Throttle rendering to project FPS during playback only
       const fps = activeProject?.fps || DEFAULT_FPS;
@@ -685,6 +701,7 @@ export function PreviewPanel() {
     cacheFrame,
     preRenderNearbyFrames,
     isPlaying,
+    previewQuality,
   ]);
 
   // Get media elements for blur background (video/image only)
@@ -703,8 +720,29 @@ export function PreviewPanel() {
   // Render blur background layer (handled by canvas now)
   const renderBlurBackground = () => null;
 
-  // Render an element (canvas handles visuals now). Audio playback to be implemented via Web Audio.
-  const renderElement = (_elementData: ActiveElement) => null;
+  // Render video elements for audio playback (visuals are on canvas)
+  const renderElement = (elementData: ActiveElement) => {
+    const { element, mediaItem } = elementData;
+    
+    // Only render video elements for audio playback
+    if (element.type === "media" && mediaItem?.type === "video" && mediaItem.url) {
+      return (
+        <VideoPlayer
+          key={`${element.id}-audio`}
+          src={mediaItem.url}
+          poster={mediaItem.thumbnailUrl}
+          clipStartTime={element.startTime}
+          trimStart={element.trimStart}
+          trimEnd={element.trimEnd}
+          clipDuration={element.duration}
+          trackMuted={element.muted}
+          className="hidden" // Hide it - visuals are on canvas
+        />
+      );
+    }
+    
+    return null;
+  };
 
   return (
     <>
@@ -736,6 +774,7 @@ export function PreviewPanel() {
                   top: 0,
                   width: previewDimensions.width,
                   height: previewDimensions.height,
+                  imageRendering: previewQuality < 1.0 ? "auto" : "auto",
                 }}
                 aria-label="Video preview canvas"
               />
@@ -745,6 +784,11 @@ export function PreviewPanel() {
                 activeElements.map((elementData) => renderElement(elementData))
               )}
               <LayoutGuideOverlay />
+              {previewQuality < 1.0 && (
+                <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded pointer-events-none">
+                  {Math.round(previewQuality * 100)}% quality
+                </div>
+              )}
             </div>
           ) : null}
 

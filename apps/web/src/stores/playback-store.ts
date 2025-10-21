@@ -6,6 +6,8 @@ import { DEFAULT_FPS, useProjectStore } from "./project-store";
 interface PlaybackStore extends PlaybackState, PlaybackControls {
   setDuration: (duration: number) => void;
   setCurrentTime: (time: number) => void;
+  previewQuality: number; // 1.0 = full quality, 0.5 = half resolution (better performance)
+  setPreviewQuality: (quality: number) => void;
 }
 
 let playbackTimer: number | null = null;
@@ -80,6 +82,7 @@ export const usePlaybackStore = create<PlaybackStore>((set, get) => ({
   muted: false,
   previousVolume: 1,
   speed: 1.0,
+  previewQuality: 0.75, // Start at 75% for better performance on most machines
 
   play: () => {
     const state = get();
@@ -171,4 +174,7 @@ export const usePlaybackStore = create<PlaybackStore>((set, get) => ({
       get().mute();
     }
   },
+
+  setPreviewQuality: (quality: number) =>
+    set({ previewQuality: Math.max(0.25, Math.min(1.0, quality)) }),
 }));
