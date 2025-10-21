@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAIStore } from "@/stores/ai-store";
-import { Loader2, Sparkles, Clock, Image as ImageIcon, Download, X } from "lucide-react";
+import { Loader2, Sparkles, Clock, Image as ImageIcon, Download, X, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,7 @@ export function AIView() {
   } = useAIStore();
 
   const [addingToTimeline, setAddingToTimeline] = useState<string | null>(null);
+  const [isReferenceExpanded, setIsReferenceExpanded] = useState(true);
   const isEditMode = referenceImageUrls.length > 0;
 
   const handleGenerate = async () => {
@@ -77,11 +78,27 @@ export function AIView() {
     <div className="flex flex-col gap-3 mt-1 h-full p-4">
       {/* Generation Form */}
       <div className="space-y-3">
-        {/* Edit Mode Reference Image - Compact */}
+        {/* Edit Mode Reference Image - Collapsible */}
         {isEditMode && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-xs">Editing Image</Label>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="text"
+                  size="icon"
+                  onClick={() => setIsReferenceExpanded(!isReferenceExpanded)}
+                  className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                  aria-label={isReferenceExpanded ? "Collapse reference image" : "Expand reference image"}
+                >
+                  {isReferenceExpanded ? (
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <Label className="text-xs">Editing Image</Label>
+              </div>
               <Button
                 type="button"
                 variant="text"
@@ -93,16 +110,18 @@ export function AIView() {
                 Clear
               </Button>
             </div>
-            <div className="relative w-full rounded-lg border border-input bg-accent/50 overflow-hidden max-h-32">
-              <Image
-                src={referenceImageUrls[0]}
-                alt="Reference image for editing"
-                width={200}
-                height={200}
-                className="w-full h-auto object-contain max-h-32"
-                unoptimized
-              />
-            </div>
+            {isReferenceExpanded && (
+              <div className="relative w-full rounded-lg border border-input bg-accent/50 overflow-hidden max-h-32 transition-all duration-200">
+                <Image
+                  src={referenceImageUrls[0]}
+                  alt="Reference image for editing"
+                  width={200}
+                  height={200}
+                  className="w-full h-auto object-contain max-h-32"
+                  unoptimized
+                />
+              </div>
+            )}
           </div>
         )}
 
