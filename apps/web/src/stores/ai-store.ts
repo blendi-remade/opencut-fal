@@ -300,7 +300,7 @@ export const useAIStore = create<AIStore>()(
       addVideoToTimeline: async (videoUrl: string) => {
         try {
           const { useProjectStore } = await import("@/stores/project-store");
-          const { useMediaStore } = await import("@/stores/media-store");
+          const { useMediaStore, generateVideoThumbnail } = await import("@/stores/media-store");
           const { useTimelineStore } = await import("@/stores/timeline-store");
           const { usePlaybackStore } = await import("@/stores/playback-store");
 
@@ -316,28 +316,38 @@ export const useAIStore = create<AIStore>()(
             type: "video/mp4",
           });
 
-          // Create a video element to get dimensions and duration
+          // Create a single blob URL to use consistently
+          const blobUrl = URL.createObjectURL(file);
+
+          // Generate thumbnail and get video info (same as normal uploads)
+          const { thumbnailUrl, width, height } = await generateVideoThumbnail(file);
+          
+          // Get duration
           const video = document.createElement("video");
-          const videoInfo = await new Promise<{ width: number; height: number; duration: number }>((resolve, reject) => {
+          video.preload = "metadata";
+          
+          const duration = await new Promise<number>((resolve, reject) => {
             video.onloadedmetadata = () => {
-              resolve({
-                width: video.videoWidth,
-                height: video.videoHeight,
-                duration: video.duration,
-              });
+              resolve(video.duration);
+              // Clean up
+              video.src = "";
+              video.load();
             };
-            video.onerror = reject;
-            video.src = URL.createObjectURL(blob);
+            video.onerror = () => {
+              reject(new Error("Failed to load video metadata"));
+            };
+            video.src = blobUrl;
           });
 
           const mediaItem: Omit<MediaFile, "id"> = {
             name: `AI Video: ${get().videoPrompt.slice(0, 30)}...`,
             type: "video",
             file,
-            url: URL.createObjectURL(file),
-            width: videoInfo.width,
-            height: videoInfo.height,
-            duration: videoInfo.duration,
+            url: blobUrl,
+            thumbnailUrl,
+            width,
+            height,
+            duration,
             ephemeral: false,
           };
 
