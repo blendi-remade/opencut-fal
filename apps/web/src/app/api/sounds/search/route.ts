@@ -97,6 +97,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
+    // Check Freesound configuration
+    if (!env.FREESOUND_API_KEY) {
+      return NextResponse.json(
+        {
+          error: "Sound search not configured",
+          message:
+            "Sound search requires Freesound API key. Check README for setup instructions.",
+        },
+        { status: 503 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
 
     const validationResult = searchParamsSchema.safeParse({

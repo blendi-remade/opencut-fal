@@ -111,6 +111,14 @@ export async function POST(request: NextRequest) {
       modalRequestBody.iv = iv;
     }
 
+    // TypeScript guard: we already checked this above, but need to satisfy the type checker
+    if (!env.MODAL_TRANSCRIPTION_URL) {
+      return NextResponse.json(
+        { error: "Transcription service URL not configured" },
+        { status: 503 }
+      );
+    }
+
     // Call Modal transcription service
     const response = await fetch(env.MODAL_TRANSCRIPTION_URL, {
       method: "POST",
