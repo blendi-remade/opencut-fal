@@ -66,7 +66,7 @@ export function AIView() {
     setAddingToTimeline(imageUrl);
     try {
       await addToTimeline(imageUrl);
-      toast.success("Added to timeline");
+      toast("Image added to timeline");
     } catch (error) {
       toast.error("Failed to add to timeline");
     } finally {

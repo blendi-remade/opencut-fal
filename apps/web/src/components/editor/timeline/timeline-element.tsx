@@ -176,8 +176,10 @@ export function TimelineElement({
     // Switch to AI tab
     setActiveTab("ai");
     
-    // Show success toast
-    toast.success("AI Edit Mode: Enter a prompt to edit this image!");
+    // Show info toast
+    toast("Ready to edit", {
+      description: "Enter a prompt to transform this image with AI",
+    });
   };
 
   const renderElementContent = () => {
