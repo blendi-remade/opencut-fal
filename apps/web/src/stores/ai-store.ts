@@ -26,7 +26,6 @@ interface AIStore {
   aspectRatio: AspectRatio;
   outputFormat: OutputFormat;
   isGenerating: boolean;
-  generationHistory: GenerationHistoryItem[];
   currentResult: AIGenerationResult | null;
   error: string | null;
   referenceImageUrls: string[];
@@ -38,12 +37,11 @@ interface AIStore {
   videoResolution: VideoResolution;
   generateAudio: boolean;
   isGeneratingVideo: boolean;
-  videoGenerationHistory: VideoGenerationHistoryItem[];
   currentVideoResult: VideoGenerationResult | null;
   videoError: string | null;
   videoReferenceImageUrl: string | null;
   
-  // Track current project to clear history on project switch
+  // Track current project to clear session on project switch
   currentProjectId: string | null;
 
   // Mode actions
@@ -57,7 +55,6 @@ interface AIStore {
   clearReferenceImages: () => void;
   generate: () => Promise<void>;
   addToTimeline: (imageUrl: string) => Promise<void>;
-  clearHistory: () => void;
   clearError: () => void;
   
   // Video generation actions
@@ -70,14 +67,10 @@ interface AIStore {
   clearVideoReferenceImage: () => void;
   generateVideo: () => Promise<void>;
   addVideoToTimeline: (videoUrl: string) => Promise<void>;
-  clearVideoHistory: () => void;
   clearVideoError: () => void;
   
   clearProjectSession: (projectId: string | null) => void;
 }
-
-const MAX_HISTORY = 20;
-const MAX_VIDEO_HISTORY = 5; // Videos are much larger, keep fewer in memory
 
 export const useAIStore = create<AIStore>()(
   persist(
@@ -90,7 +83,6 @@ export const useAIStore = create<AIStore>()(
       aspectRatio: "1:1",
       outputFormat: "jpeg",
       isGenerating: false,
-      generationHistory: [],
       currentResult: null,
       error: null,
       referenceImageUrls: [],
@@ -102,7 +94,6 @@ export const useAIStore = create<AIStore>()(
       videoResolution: "720p",
       generateAudio: true,
       isGeneratingVideo: false,
-      videoGenerationHistory: [],
       currentVideoResult: null,
       videoError: null,
       videoReferenceImageUrl: null,
@@ -146,34 +137,17 @@ export const useAIStore = create<AIStore>()(
 
           const result = await generateImage(params);
           
-          const historyItem: GenerationHistoryItem = {
-            id: crypto.randomUUID(),
-            prompt: params.prompt,
-            params,
-            result,
-            timestamp: Date.now(),
-          };
-
-          set((state) => {
-            const newHistory = [historyItem, ...state.generationHistory];
-            
-            // Clean up blob URLs from items that will be removed
-            if (newHistory.length > MAX_HISTORY) {
-              const itemsToRemove = newHistory.slice(MAX_HISTORY);
-              for (const item of itemsToRemove) {
-                for (const image of item.result.images) {
-                  if (image.url && image.url.startsWith('blob:')) {
-                    URL.revokeObjectURL(image.url);
-                  }
-                }
+          // Clean up previous result's blob URLs
+          const { currentResult } = get();
+          if (currentResult) {
+            for (const image of currentResult.images) {
+              if (image.url && image.url.startsWith('blob:')) {
+                URL.revokeObjectURL(image.url);
               }
             }
-            
-            return {
-              currentResult: result,
-              generationHistory: newHistory.slice(0, MAX_HISTORY),
-            };
-          });
+          }
+          
+          set({ currentResult: result });
         } catch (error) {
           console.error("AI generation failed:", error);
           set({ 
@@ -238,55 +212,22 @@ export const useAIStore = create<AIStore>()(
           const { addElementAtTime } = useTimelineStore.getState();
           addElementAtTime(added, currentTime);
           
-          // Clean up image from AI panel history after adding to timeline
-          const { generationHistory, currentResult } = get();
-          
-          const updatedHistory = generationHistory.filter(item => {
-            const hasImage = item.result.images.some(img => img.url === imageUrl);
-            if (hasImage) {
-              // Clean up blob URLs
-              for (const img of item.result.images) {
-                if (img.url.startsWith('blob:')) {
-                  URL.revokeObjectURL(img.url);
-                }
-              }
-              return false;
-            }
-            return true;
-          });
-          
-          let updatedCurrentResult = currentResult;
+          // Clear current result after successfully adding to timeline
+          const { currentResult } = get();
           if (currentResult?.images.some(img => img.url === imageUrl)) {
             for (const img of currentResult.images) {
               if (img.url.startsWith('blob:')) {
                 URL.revokeObjectURL(img.url);
               }
             }
-            updatedCurrentResult = null;
+            set({ currentResult: null });
           }
-          
-          set({ 
-            generationHistory: updatedHistory,
-            currentResult: updatedCurrentResult,
-          });
         } catch (error) {
           console.error("Failed to add to timeline:", error);
           throw error;
         }
       },
 
-      clearHistory: () => {
-        // Clean up blob URLs before clearing history
-        const { generationHistory } = get();
-        for (const item of generationHistory) {
-          for (const image of item.result.images) {
-            if (image.url && image.url.startsWith('blob:')) {
-              URL.revokeObjectURL(image.url);
-            }
-          }
-        }
-        set({ generationHistory: [] });
-      },
       clearError: () => set({ error: null }),
       
       // Video generation actions
@@ -329,32 +270,13 @@ export const useAIStore = create<AIStore>()(
 
           const result = await generateVideo(params);
           
-          const historyItem: VideoGenerationHistoryItem = {
-            id: crypto.randomUUID(),
-            prompt: params.prompt,
-            params,
-            result,
-            timestamp: Date.now(),
-          };
-
-          set((state) => {
-            const newHistory = [historyItem, ...state.videoGenerationHistory];
-            
-            // Clean up blob URLs from items that will be removed
-            if (newHistory.length > MAX_VIDEO_HISTORY) {
-              const itemsToRemove = newHistory.slice(MAX_VIDEO_HISTORY);
-              for (const item of itemsToRemove) {
-                if (item.result.video.url && item.result.video.url.startsWith('blob:')) {
-                  URL.revokeObjectURL(item.result.video.url);
-                }
-              }
-            }
-            
-            return {
-              currentVideoResult: result,
-              videoGenerationHistory: newHistory.slice(0, MAX_VIDEO_HISTORY),
-            };
-          });
+          // Clean up previous result's blob URL
+          const { currentVideoResult } = get();
+          if (currentVideoResult && currentVideoResult.video.url.startsWith('blob:')) {
+            URL.revokeObjectURL(currentVideoResult.video.url);
+          }
+          
+          set({ currentVideoResult: result });
         } catch (error) {
           console.error("Video generation failed:", error);
           set({ 
@@ -438,74 +360,27 @@ export const useAIStore = create<AIStore>()(
           const { addElementAtTime } = useTimelineStore.getState();
           addElementAtTime(added, currentTime);
           
-          // CRITICAL: Clear video from AI panel history after adding to timeline
-          // This prevents keeping large video files in memory twice
-          const { videoGenerationHistory, currentVideoResult } = get();
-          
-          // Remove this video from history
-          const updatedHistory = videoGenerationHistory.filter(item => {
-            if (item.result.video.url === videoUrl) {
-              // Clean up the blob URL from AI panel
-              if (videoUrl.startsWith('blob:')) {
-                URL.revokeObjectURL(videoUrl);
-              }
-              return false;
-            }
-            return true;
-          });
-          
-          // Clear current result if it's the video we just added
-          let updatedCurrentResult = currentVideoResult;
+          // Clear current result after successfully adding to timeline
+          const { currentVideoResult } = get();
           if (currentVideoResult?.video.url === videoUrl) {
             if (videoUrl.startsWith('blob:')) {
               URL.revokeObjectURL(videoUrl);
             }
-            updatedCurrentResult = null;
+            set({ currentVideoResult: null });
           }
-          
-          set({ 
-            videoGenerationHistory: updatedHistory,
-            currentVideoResult: updatedCurrentResult,
-          });
         } catch (error) {
           console.error("Failed to add video to timeline:", error);
           throw error;
         }
       },
 
-      clearVideoHistory: () => {
-        // Clean up blob URLs before clearing video history
-        const { videoGenerationHistory } = get();
-        for (const item of videoGenerationHistory) {
-          if (item.result.video.url && item.result.video.url.startsWith('blob:')) {
-            URL.revokeObjectURL(item.result.video.url);
-          }
-        }
-        set({ videoGenerationHistory: [] });
-      },
       clearVideoError: () => set({ videoError: null }),
       
       clearProjectSession: (projectId: string | null) => {
-        const { currentProjectId, generationHistory, videoGenerationHistory, currentResult, currentVideoResult } = get();
+        const { currentProjectId, currentResult, currentVideoResult } = get();
         
         // If switching to a different project or closing project, clear the session
         if (currentProjectId !== projectId) {
-          // Clean up blob URLs from image generation history
-          for (const item of generationHistory) {
-            for (const image of item.result.images) {
-              if (image.url && image.url.startsWith('blob:')) {
-                URL.revokeObjectURL(image.url);
-              }
-            }
-          }
-          
-          // Clean up blob URLs from video generation history
-          for (const item of videoGenerationHistory) {
-            if (item.result.video.url && item.result.video.url.startsWith('blob:')) {
-              URL.revokeObjectURL(item.result.video.url);
-            }
-          }
-          
           // Clean up current results
           if (currentResult) {
             for (const image of currentResult.images) {
@@ -523,12 +398,10 @@ export const useAIStore = create<AIStore>()(
             currentProjectId: projectId,
             mode: "image",
             currentResult: null,
-            generationHistory: [],
             prompt: "",
             error: null,
             referenceImageUrls: [],
             currentVideoResult: null,
-            videoGenerationHistory: [],
             videoPrompt: "",
             videoError: null,
             videoReferenceImageUrl: null,

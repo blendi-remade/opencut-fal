@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAIStore } from "@/stores/ai-store";
-import { Loader2, Sparkles, Clock, Image as ImageIcon, Download, X, ChevronDown, ChevronUp, Video } from "lucide-react";
+import { Loader2, Sparkles, Image as ImageIcon, Download, X, ChevronDown, ChevronUp, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,7 +60,6 @@ export function AIView() {
     outputFormat,
     isGenerating,
     currentResult,
-    generationHistory,
     error,
     referenceImageUrls,
     setPrompt,
@@ -68,7 +67,6 @@ export function AIView() {
     setOutputFormat,
     generate,
     addToTimeline,
-    clearHistory,
     clearError,
     clearReferenceImages,
     // Video generation
@@ -79,7 +77,6 @@ export function AIView() {
     generateAudio,
     isGeneratingVideo,
     currentVideoResult,
-    videoGenerationHistory,
     videoError,
     videoReferenceImageUrl,
     setVideoPrompt,
@@ -89,7 +86,6 @@ export function AIView() {
     setGenerateAudio,
     generateVideo,
     addVideoToTimeline,
-    clearVideoHistory,
     clearVideoError,
     clearVideoReferenceImage,
   } = useAIStore();
@@ -203,38 +199,6 @@ export function AIView() {
                 </div>
               )}
 
-              {/* Image History */}
-              {generationHistory.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                      <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="text"
-                      size="sm"
-                      onClick={clearHistory}
-                      className="text-muted-foreground"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                  <div className="grid gap-2">
-                    {generationHistory.map((item) => (
-                      <GeneratedImageCard
-                        key={item.id}
-                        image={item.result.images[0]}
-                        description={item.prompt}
-                        onAddToTimeline={handleAddToTimeline}
-                        isAdding={addingToTimeline === item.result.images[0].url}
-                        compact
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           ) : (
             <>
@@ -250,37 +214,6 @@ export function AIView() {
                 </div>
               )}
 
-              {/* Video History */}
-              {videoGenerationHistory.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                      <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="text"
-                      size="sm"
-                      onClick={clearVideoHistory}
-                      className="text-muted-foreground"
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                  <div className="grid gap-2">
-                    {videoGenerationHistory.map((item) => (
-                      <GeneratedVideoCard
-                        key={item.id}
-                        video={item.result.video}
-                        onAddToTimeline={handleAddVideoToTimeline}
-                        isAdding={addingToTimeline === item.result.video.url}
-                        compact
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
