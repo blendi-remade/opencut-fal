@@ -19,11 +19,6 @@ export function MediaPanel() {
     sounds: <SoundsView />,
     text: <TextView />,
     stickers: <StickersView />,
-    effects: (
-      <div className="p-4 text-muted-foreground">
-        Effects view coming soon...
-      </div>
-    ),
     transitions: (
       <div className="p-4 text-muted-foreground">
         Transitions view coming soon...
