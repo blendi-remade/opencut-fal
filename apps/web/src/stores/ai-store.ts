@@ -21,6 +21,8 @@ interface AIStore {
   error: string | null;
   // Image editing mode
   referenceImageUrls: string[];
+  // Track current project to clear history on project switch
+  currentProjectId: string | null;
 
   // Actions
   setPrompt: (prompt: string) => void;
@@ -32,6 +34,7 @@ interface AIStore {
   addToTimeline: (imageUrl: string) => Promise<void>;
   clearHistory: () => void;
   clearError: () => void;
+  clearProjectSession: (projectId: string | null) => void;
 }
 
 const MAX_HISTORY = 20;
@@ -48,6 +51,7 @@ export const useAIStore = create<AIStore>()(
       currentResult: null,
       error: null,
       referenceImageUrls: [],
+      currentProjectId: null,
 
       // Actions
       setPrompt: (prompt) => set({ prompt }),
@@ -169,11 +173,26 @@ export const useAIStore = create<AIStore>()(
 
       clearHistory: () => set({ generationHistory: [] }),
       clearError: () => set({ error: null }),
+      
+      clearProjectSession: (projectId: string | null) => {
+        const { currentProjectId } = get();
+        
+        // If switching to a different project or closing project, clear the session
+        if (currentProjectId !== projectId) {
+          set({
+            currentProjectId: projectId,
+            currentResult: null,
+            generationHistory: [],
+            prompt: "",
+            error: null,
+            referenceImageUrls: [],
+          });
+        }
+      },
     }),
     {
       name: "ai-generation",
       partialize: (state) => ({
-        generationHistory: state.generationHistory,
         aspectRatio: state.aspectRatio,
         outputFormat: state.outputFormat,
       }),

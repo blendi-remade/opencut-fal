@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useMediaStore } from "./media-store";
 import { useTimelineStore } from "./timeline-store";
 import { useSceneStore } from "./scene-store";
+import { useAIStore } from "./ai-store";
 import { generateUUID } from "@/lib/utils";
 import { CanvasSize, CanvasMode } from "@/types/editor";
 
@@ -188,9 +189,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const mediaStore = useMediaStore.getState();
     const timelineStore = useTimelineStore.getState();
     const sceneStore = useSceneStore.getState();
+    const aiStore = useAIStore.getState();
 
     mediaStore.clearAllMedia();
     timelineStore.clearTimeline();
+    aiStore.clearProjectSession(newProject.id);
 
     sceneStore.initializeScenes({
       scenes: newProject.scenes,
@@ -217,10 +220,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const mediaStore = useMediaStore.getState();
     const timelineStore = useTimelineStore.getState();
     const sceneStore = useSceneStore.getState();
+    const aiStore = useAIStore.getState();
 
     mediaStore.clearAllMedia();
     timelineStore.clearTimeline();
     sceneStore.clearScenes();
+    aiStore.clearProjectSession(id);
 
     try {
       const project = await storageService.loadProject({ id });
@@ -327,10 +332,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const mediaStore = useMediaStore.getState();
     const timelineStore = useTimelineStore.getState();
     const sceneStore = useSceneStore.getState();
+    const aiStore = useAIStore.getState();
 
     mediaStore.clearAllMedia();
     timelineStore.clearTimeline();
     sceneStore.clearScenes();
+    aiStore.clearProjectSession(null);
   },
 
   renameProject: async (id: string, name: string) => {
