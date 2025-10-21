@@ -1,5 +1,5 @@
 "use client";
-
+import { AIView } from "./views/ai";
 import { TabBar } from "./tabbar";
 import { MediaView } from "./views/media";
 import { useMediaPanelStore, Tab } from "./store";
@@ -15,6 +15,7 @@ export function MediaPanel() {
 
   const viewMap: Record<Tab, React.ReactNode> = {
     media: <MediaView />,
+    ai: <AIView />,
     sounds: <SoundsView />,
     text: <TextView />,
     stickers: <StickersView />,

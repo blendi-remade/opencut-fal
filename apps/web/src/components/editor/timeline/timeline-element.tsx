@@ -10,6 +10,7 @@ import {
   Eye,
   Volume2,
   VolumeX,
+  Sparkles,
 } from "lucide-react";
 import { useMediaStore } from "@/stores/media-store";
 import { useTimelineStore } from "@/stores/timeline-store";
@@ -152,6 +153,31 @@ export function TimelineElement({
   const handleRevealInMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
     revealElementInMedia(element.id);
+  };
+
+  const { setActiveTab } = useMediaPanelStore();
+
+  const handleEditWithAI = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if element is an image
+    if (element.type !== "media") return;
+    
+    const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
+    if (!mediaItem || mediaItem.type !== "image") return;
+
+    // Dynamically import AI store to avoid circular dependencies
+    const { useAIStore } = await import("@/stores/ai-store");
+    const { setReferenceImages } = useAIStore.getState();
+
+    // Set the image as reference for editing
+    setReferenceImages([mediaItem.url]);
+
+    // Switch to AI tab
+    setActiveTab("ai");
+    
+    // Show success toast
+    toast.success("AI Edit Mode: Enter a prompt to edit this image!");
   };
 
   const renderElementContent = () => {
@@ -367,6 +393,12 @@ export function TimelineElement({
               <RefreshCw className="h-4 w-4 mr-2" />
               Replace clip
             </ContextMenuItem>
+            {mediaItem?.type === "image" && (
+              <ContextMenuItem onClick={handleEditWithAI}>
+                <Sparkles className="h-4 w-4 mr-2" />
+                Edit with AI
+              </ContextMenuItem>
+            )}
           </>
         )}
 

@@ -23,12 +23,17 @@ export type Tab =
   | "captions"
   | "filters"
   | "adjustment"
-  | "settings";
+  | "settings"
+  | "ai";
 
 export const tabs: { [key in Tab]: { icon: LucideIcon; label: string } } = {
   media: {
     icon: VideoIcon,
     label: "Media",
+  },
+  ai: {
+    icon: SparklesIcon,
+    label: "AI",
   },
   sounds: {
     icon: MusicIcon,
