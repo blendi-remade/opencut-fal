@@ -11,6 +11,7 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
+  Video,
 } from "lucide-react";
 import { useMediaStore } from "@/stores/media-store";
 import { useTimelineStore } from "@/stores/timeline-store";
@@ -164,14 +165,17 @@ export function TimelineElement({
     if (element.type !== "media") return;
     
     const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
-    if (!mediaItem || mediaItem.type !== "image") return;
+    if (!mediaItem || mediaItem.type !== "image" || !mediaItem.url) return;
 
     // Dynamically import AI store to avoid circular dependencies
     const { useAIStore } = await import("@/stores/ai-store");
-    const { setReferenceImages } = useAIStore.getState();
+    const { setReferenceImages, setMode } = useAIStore.getState();
 
     // Set the image as reference for editing
     setReferenceImages([mediaItem.url]);
+    
+    // Set mode to image
+    setMode("image");
 
     // Switch to AI tab
     setActiveTab("ai");
@@ -179,6 +183,34 @@ export function TimelineElement({
     // Show info toast
     toast("Ready to edit", {
       description: "Enter a prompt to transform this image with AI",
+    });
+  };
+
+  const handleAnimateWithAI = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if element is an image
+    if (element.type !== "media") return;
+    
+    const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
+    if (!mediaItem || mediaItem.type !== "image" || !mediaItem.url) return;
+
+    // Dynamically import AI store to avoid circular dependencies
+    const { useAIStore } = await import("@/stores/ai-store");
+    const { setVideoReferenceImage, setMode } = useAIStore.getState();
+
+    // Set the image as reference for video generation
+    setVideoReferenceImage(mediaItem.url);
+    
+    // Set mode to video
+    setMode("video");
+
+    // Switch to AI tab
+    setActiveTab("ai");
+    
+    // Show info toast
+    toast("Ready to animate", {
+      description: "Enter a prompt to bring this image to life",
     });
   };
 
@@ -396,10 +428,16 @@ export function TimelineElement({
               Replace clip
             </ContextMenuItem>
             {mediaItem?.type === "image" && (
-              <ContextMenuItem onClick={handleEditWithAI}>
-                <Sparkles className="h-4 w-4 mr-2" />
-                Edit with AI
-              </ContextMenuItem>
+              <>
+                <ContextMenuItem onClick={handleEditWithAI}>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  Edit with AI
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleAnimateWithAI}>
+                  <Video className="h-4 w-4 mr-2" />
+                  Animate with AI
+                </ContextMenuItem>
+              </>
             )}
           </>
         )}

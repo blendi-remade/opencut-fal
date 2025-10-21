@@ -1,5 +1,9 @@
 export type AspectRatio = "21:9" | "1:1" | "4:3" | "3:2" | "2:3" | "5:4" | "4:5" | "3:4" | "16:9" | "9:16";
 export type OutputFormat = "jpeg" | "png" | "webp";
+export type AIMode = "image" | "video";
+export type VideoDuration = "8s";
+export type VideoResolution = "720p" | "1080p";
+export type VideoAspectRatio = "16:9" | "9:16";
 
 export interface AIGenerationParams {
   prompt: string;
@@ -28,5 +32,34 @@ export interface GenerationHistoryItem {
   prompt: string;
   params: AIGenerationParams;
   result: AIGenerationResult;
+  timestamp: number;
+}
+
+// Video generation types
+export interface VideoGenerationParams {
+  prompt: string;
+  image_url: string;
+  aspect_ratio: VideoAspectRatio;
+  duration: VideoDuration;
+  generate_audio: boolean;
+  resolution: VideoResolution;
+}
+
+export interface AIGeneratedVideo {
+  url: string;
+  content_type?: string;
+  file_name?: string;
+  file_size?: number;
+}
+
+export interface VideoGenerationResult {
+  video: AIGeneratedVideo;
+}
+
+export interface VideoGenerationHistoryItem {
+  id: string;
+  prompt: string;
+  params: VideoGenerationParams;
+  result: VideoGenerationResult;
   timestamp: number;
 }

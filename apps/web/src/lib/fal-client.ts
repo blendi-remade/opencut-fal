@@ -1,4 +1,4 @@
-import type { AIGenerationParams, AIGenerationResult } from "@/types/ai";
+import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult } from "@/types/ai";
 
 /**
  * Convert blob URL to base64 data URI
@@ -67,6 +67,55 @@ export async function generateImage({
     console.error("AI generation error:", error);
     throw new Error(
       error instanceof Error ? error.message : "Failed to generate image. Please try again."
+    );
+  }
+}
+
+/**
+ * Generate a video from an image using fal.ai's Veo 3.1 Fast model
+ * Makes a server-side API call to protect the API key
+ */
+export async function generateVideo({
+  prompt,
+  image_url,
+  aspect_ratio,
+  duration,
+  generate_audio,
+  resolution,
+}: VideoGenerationParams): Promise<VideoGenerationResult> {
+  try {
+    // Convert blob URL to base64 data URI if needed
+    let processedImageUrl = image_url;
+    if (image_url.startsWith('blob:')) {
+      processedImageUrl = await blobUrlToDataUri(image_url);
+    }
+
+    const response = await fetch("/api/ai/generate-video", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        prompt,
+        image_url: processedImageUrl,
+        aspect_ratio,
+        duration,
+        generate_audio,
+        resolution,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Video generation failed");
+    }
+
+    const data = await response.json();
+    return data as VideoGenerationResult;
+  } catch (error) {
+    console.error("Video generation error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to generate video. Please try again."
     );
   }
 }

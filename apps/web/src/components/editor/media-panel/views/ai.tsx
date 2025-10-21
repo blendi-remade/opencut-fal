@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAIStore } from "@/stores/ai-store";
-import { Loader2, Sparkles, Clock, Image as ImageIcon, Download, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Sparkles, Clock, Image as ImageIcon, Download, X, ChevronDown, ChevronUp, Video } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import type { AspectRatio, OutputFormat } from "@/types/ai";
+import type { AspectRatio, OutputFormat, VideoDuration, VideoResolution, VideoAspectRatio, AIMode } from "@/types/ai";
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string }[] = [
   { value: "1:1", label: "Square (1:1)" },
@@ -34,8 +36,25 @@ const OUTPUT_FORMATS: { value: OutputFormat; label: string }[] = [
   { value: "webp", label: "WebP" },
 ];
 
+const VIDEO_ASPECT_RATIOS: { value: VideoAspectRatio; label: string }[] = [
+  { value: "16:9", label: "Landscape (16:9)" },
+  { value: "9:16", label: "Portrait (9:16)" },
+];
+
+const VIDEO_DURATIONS: { value: VideoDuration; label: string }[] = [
+  { value: "8s", label: "8 seconds" },
+];
+
+const VIDEO_RESOLUTIONS: { value: VideoResolution; label: string }[] = [
+  { value: "720p", label: "720p" },
+  { value: "1080p", label: "1080p" },
+];
+
 export function AIView() {
   const {
+    mode,
+    setMode,
+    // Image generation
     prompt,
     aspectRatio,
     outputFormat,
@@ -52,6 +71,27 @@ export function AIView() {
     clearHistory,
     clearError,
     clearReferenceImages,
+    // Video generation
+    videoPrompt,
+    videoAspectRatio,
+    videoDuration,
+    videoResolution,
+    generateAudio,
+    isGeneratingVideo,
+    currentVideoResult,
+    videoGenerationHistory,
+    videoError,
+    videoReferenceImageUrl,
+    setVideoPrompt,
+    setVideoAspectRatio,
+    setVideoDuration,
+    setVideoResolution,
+    setGenerateAudio,
+    generateVideo,
+    addVideoToTimeline,
+    clearVideoHistory,
+    clearVideoError,
+    clearVideoReferenceImage,
   } = useAIStore();
 
   const [addingToTimeline, setAddingToTimeline] = useState<string | null>(null);
@@ -74,10 +114,217 @@ export function AIView() {
     }
   };
 
+  const handleGenerateVideo = async () => {
+    await generateVideo();
+  };
+
+  const handleAddVideoToTimeline = async (videoUrl: string) => {
+    setAddingToTimeline(videoUrl);
+    try {
+      await addVideoToTimeline(videoUrl);
+      toast("Video added to timeline");
+    } catch (error) {
+      toast.error("Failed to add video to timeline");
+    } finally {
+      setAddingToTimeline(null);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 mt-1 h-full p-4">
+      {/* Mode Selector */}
+      <SegmentedControl
+        options={[
+          { value: "image" as AIMode, label: "Image" },
+          { value: "video" as AIMode, label: "Video" },
+        ]}
+        value={mode}
+        onChange={setMode}
+        className="w-full"
+      />
+
       {/* Generation Form */}
       <div className="space-y-3">
+        {mode === "image" ? (
+          <ImageGenerationForm
+            prompt={prompt}
+            aspectRatio={aspectRatio}
+            outputFormat={outputFormat}
+            isGenerating={isGenerating}
+            error={error}
+            referenceImageUrls={referenceImageUrls}
+            isEditMode={isEditMode}
+            isReferenceExpanded={isReferenceExpanded}
+            setPrompt={setPrompt}
+            setAspectRatio={setAspectRatio}
+            setOutputFormat={setOutputFormat}
+            clearReferenceImages={clearReferenceImages}
+            setIsReferenceExpanded={setIsReferenceExpanded}
+            handleGenerate={handleGenerate}
+            clearError={clearError}
+          />
+        ) : (
+          <VideoGenerationForm
+            videoPrompt={videoPrompt}
+            videoAspectRatio={videoAspectRatio}
+            videoDuration={videoDuration}
+            videoResolution={videoResolution}
+            generateAudio={generateAudio}
+            isGeneratingVideo={isGeneratingVideo}
+            videoError={videoError}
+            videoReferenceImageUrl={videoReferenceImageUrl}
+            setVideoPrompt={setVideoPrompt}
+            setVideoAspectRatio={setVideoAspectRatio}
+            setVideoDuration={setVideoDuration}
+            setVideoResolution={setVideoResolution}
+            setGenerateAudio={setGenerateAudio}
+            clearVideoReferenceImage={clearVideoReferenceImage}
+            handleGenerateVideo={handleGenerateVideo}
+            clearVideoError={clearVideoError}
+          />
+        )}
+      </div>
+
+      {/* Results */}
+      <ScrollArea className="flex-1">
+        <div className="space-y-4">
+          {mode === "image" ? (
+            <>
+              {/* Current Image Result */}
+              {currentResult && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Generated Image</h3>
+                  <GeneratedImageCard
+                    image={currentResult.images[0]}
+                    description={currentResult.description}
+                    onAddToTimeline={handleAddToTimeline}
+                    isAdding={addingToTimeline === currentResult.images[0].url}
+                  />
+                </div>
+              )}
+
+              {/* Image History */}
+              {generationHistory.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                      <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="text"
+                      size="sm"
+                      onClick={clearHistory}
+                      className="text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  <div className="grid gap-2">
+                    {generationHistory.map((item) => (
+                      <GeneratedImageCard
+                        key={item.id}
+                        image={item.result.images[0]}
+                        description={item.prompt}
+                        onAddToTimeline={handleAddToTimeline}
+                        isAdding={addingToTimeline === item.result.images[0].url}
+                        compact
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Current Video Result */}
+              {currentVideoResult && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Generated Video</h3>
+                  <GeneratedVideoCard
+                    video={currentVideoResult.video}
+                    onAddToTimeline={handleAddVideoToTimeline}
+                    isAdding={addingToTimeline === currentVideoResult.video.url}
+                  />
+                </div>
+              )}
+
+              {/* Video History */}
+              {videoGenerationHistory.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                      <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="text"
+                      size="sm"
+                      onClick={clearVideoHistory}
+                      className="text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                  <div className="grid gap-2">
+                    {videoGenerationHistory.map((item) => (
+                      <GeneratedVideoCard
+                        key={item.id}
+                        video={item.result.video}
+                        onAddToTimeline={handleAddVideoToTimeline}
+                        isAdding={addingToTimeline === item.result.video.url}
+                        compact
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+// Image Generation Form Component
+function ImageGenerationForm({
+  prompt,
+  aspectRatio,
+  outputFormat,
+  isGenerating,
+  error,
+  referenceImageUrls,
+  isEditMode,
+  isReferenceExpanded,
+  setPrompt,
+  setAspectRatio,
+  setOutputFormat,
+  clearReferenceImages,
+  setIsReferenceExpanded,
+  handleGenerate,
+  clearError,
+}: {
+  prompt: string;
+  aspectRatio: AspectRatio;
+  outputFormat: OutputFormat;
+  isGenerating: boolean;
+  error: string | null;
+  referenceImageUrls: string[];
+  isEditMode: boolean;
+  isReferenceExpanded: boolean;
+  setPrompt: (prompt: string) => void;
+  setAspectRatio: (ratio: AspectRatio) => void;
+  setOutputFormat: (format: OutputFormat) => void;
+  clearReferenceImages: () => void;
+  setIsReferenceExpanded: (expanded: boolean) => void;
+  handleGenerate: () => void;
+  clearError: () => void;
+}) {
+  return (
+    <div className="space-y-3">
         {/* Edit Mode Reference Image - Collapsible */}
         {isEditMode && (
           <div className="space-y-2">
@@ -220,58 +467,194 @@ export function AIView() {
             </Button>
           </div>
         )}
+    </div>
+  );
+}
+
+// Video Generation Form Component
+function VideoGenerationForm({
+  videoPrompt,
+  videoAspectRatio,
+  videoDuration,
+  videoResolution,
+  generateAudio,
+  isGeneratingVideo,
+  videoError,
+  videoReferenceImageUrl,
+  setVideoPrompt,
+  setVideoAspectRatio,
+  setVideoDuration,
+  setVideoResolution,
+  setGenerateAudio,
+  clearVideoReferenceImage,
+  handleGenerateVideo,
+  clearVideoError,
+}: {
+  videoPrompt: string;
+  videoAspectRatio: VideoAspectRatio;
+  videoDuration: VideoDuration;
+  videoResolution: VideoResolution;
+  generateAudio: boolean;
+  isGeneratingVideo: boolean;
+  videoError: string | null;
+  videoReferenceImageUrl: string | null;
+  setVideoPrompt: (prompt: string) => void;
+  setVideoAspectRatio: (ratio: VideoAspectRatio) => void;
+  setVideoDuration: (duration: VideoDuration) => void;
+  setVideoResolution: (resolution: VideoResolution) => void;
+  setGenerateAudio: (generate: boolean) => void;
+  clearVideoReferenceImage: () => void;
+  handleGenerateVideo: () => void;
+  clearVideoError: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {/* Reference Frame */}
+      {videoReferenceImageUrl ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Reference Frame</Label>
+            <Button
+              type="button"
+              variant="text"
+              size="sm"
+              onClick={clearVideoReferenceImage}
+              className="text-muted-foreground h-6"
+            >
+              <X className="h-3 w-3 mr-1" />
+              Clear
+            </Button>
+          </div>
+          <div className="relative w-full rounded-lg border border-input bg-accent/50 overflow-hidden max-h-32">
+            <Image
+              src={videoReferenceImageUrl}
+              alt="Reference frame for video"
+              width={200}
+              height={200}
+              className="w-full h-auto object-contain max-h-32"
+              unoptimized
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="p-4 rounded-lg border border-dashed border-muted-foreground/30 text-center">
+          <Video className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+          <p className="text-xs text-muted-foreground">
+            Select an image from the timeline to animate
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-1.5">
+        <Label htmlFor="video-prompt" className="text-xs">Animation Prompt</Label>
+        <Input
+          id="video-prompt"
+          placeholder="Describe how to animate this image..."
+          value={videoPrompt}
+          onChange={(e) => setVideoPrompt(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleGenerateVideo();
+            }
+          }}
+          disabled={isGeneratingVideo}
+        />
       </div>
 
-      {/* Results */}
-      <ScrollArea className="flex-1">
-        <div className="space-y-4">
-          {/* Current Result */}
-          {currentResult && (
-            <div className="space-y-2">
-              <h3 className="text-xs font-medium text-muted-foreground">Generated Image</h3>
-              <GeneratedImageCard
-                image={currentResult.images[0]}
-                description={currentResult.description}
-                onAddToTimeline={handleAddToTimeline}
-                isAdding={addingToTimeline === currentResult.images[0].url}
-              />
-            </div>
-          )}
-
-          {/* History */}
-          {generationHistory.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                  <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
-                </div>
-                <Button
-                  type="button"
-                  variant="text"
-                  size="sm"
-                  onClick={clearHistory}
-                  className="text-muted-foreground"
-                >
-                  Clear
-                </Button>
-              </div>
-              <div className="grid gap-2">
-                {generationHistory.map((item) => (
-                  <GeneratedImageCard
-                    key={item.id}
-                    image={item.result.images[0]}
-                    description={item.prompt}
-                    onAddToTimeline={handleAddToTimeline}
-                    isAdding={addingToTimeline === item.result.images[0].url}
-                    compact
-                  />
-                ))}
-              </div>
-            </div>
-          )}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="video-aspect-ratio" className="text-xs">Aspect Ratio</Label>
+          <Select
+            value={videoAspectRatio}
+            onValueChange={(value) => setVideoAspectRatio(value as VideoAspectRatio)}
+            disabled={isGeneratingVideo}
+          >
+            <SelectTrigger id="video-aspect-ratio" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VIDEO_ASPECT_RATIOS.map((ratio) => (
+                <SelectItem key={ratio.value} value={ratio.value}>
+                  {ratio.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </ScrollArea>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="video-resolution" className="text-xs">Resolution</Label>
+          <Select
+            value={videoResolution}
+            onValueChange={(value) => setVideoResolution(value as VideoResolution)}
+            disabled={isGeneratingVideo}
+          >
+            <SelectTrigger id="video-resolution" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VIDEO_RESOLUTIONS.map((res) => (
+                <SelectItem key={res.value} value={res.value}>
+                  {res.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex items-center space-x-2">
+        <Checkbox
+          id="generate-audio"
+          checked={generateAudio}
+          onCheckedChange={setGenerateAudio}
+          disabled={isGeneratingVideo}
+        />
+        <Label
+          htmlFor="generate-audio"
+          className="text-xs font-normal cursor-pointer"
+        >
+          Generate audio (uses more credits)
+        </Label>
+      </div>
+
+      <Button
+        type="button"
+        onClick={handleGenerateVideo}
+        disabled={isGeneratingVideo || !videoPrompt.trim() || !videoReferenceImageUrl}
+        className="w-full h-9"
+        size="sm"
+        aria-label="Generate video from image"
+      >
+        {isGeneratingVideo ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Generating...
+          </>
+        ) : (
+          <>
+            <Video className="h-3.5 w-3.5" />
+            Generate Video
+          </>
+        )}
+      </Button>
+
+      {videoError && (
+        <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md flex justify-between items-center">
+          <span>{videoError}</span>
+          <Button
+            type="button"
+            variant="text"
+            size="icon"
+            onClick={clearVideoError}
+            className="h-auto w-auto p-0"
+            aria-label="Dismiss error"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -318,6 +701,53 @@ function GeneratedImageCard({
           disabled={isAdding}
           className="w-full h-8"
           aria-label="Add generated image to timeline"
+        >
+          <Download className="h-3 w-3" />
+          Add to Timeline
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function GeneratedVideoCard({
+  video,
+  onAddToTimeline,
+  isAdding,
+  compact = false,
+}: {
+  video: { url: string };
+  onAddToTimeline: (url: string) => void;
+  isAdding: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={cn(
+      "relative group rounded-lg border border-input bg-accent/50 overflow-hidden",
+      isAdding && "opacity-50 pointer-events-none"
+    )}>
+      <div className="relative w-full aspect-video bg-black">
+        {/* biome-ignore lint/a11y/useMediaCaption: Video preview doesn't need captions */}
+        <video
+          src={video.url}
+          controls
+          className="w-full h-full"
+          preload="metadata"
+        />
+        {isAdding && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-white" />
+          </div>
+        )}
+      </div>
+      <div className="p-2.5">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onAddToTimeline(video.url)}
+          disabled={isAdding}
+          className="w-full h-8"
+          aria-label="Add generated video to timeline"
         >
           <Download className="h-3 w-3" />
           Add to Timeline
