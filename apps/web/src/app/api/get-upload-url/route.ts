@@ -29,6 +29,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
+    // Check R2 configuration
+    if (
+      !env.R2_ACCESS_KEY_ID ||
+      !env.R2_SECRET_ACCESS_KEY ||
+      !env.R2_BUCKET_NAME ||
+      !env.CLOUDFLARE_ACCOUNT_ID
+    ) {
+      return NextResponse.json(
+        {
+          error: "Upload storage not configured",
+          message:
+            "File uploads require R2 environment variables. Check README for setup instructions.",
+        },
+        { status: 503 }
+      );
+    }
+
     // Check transcription configuration
     const transcriptionCheck = isTranscriptionConfigured();
     if (!transcriptionCheck.configured) {
