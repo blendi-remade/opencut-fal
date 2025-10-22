@@ -1,4 +1,4 @@
-import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult } from "@/types/ai";
+import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult, VideoBackgroundRemovalParams, VideoBackgroundRemovalResult } from "@/types/ai";
 
 /**
  * Convert blob URL to base64 data URI
@@ -155,6 +155,49 @@ export async function removeBackground({
     console.error("Background removal error:", error);
     throw new Error(
       error instanceof Error ? error.message : "Failed to remove background. Please try again."
+    );
+  }
+}
+
+/**
+ * Remove background from a video using fal.ai's Bria video background removal model
+ * Makes a server-side API call to protect the API key
+ */
+export async function removeVideoBackground({
+  video_url,
+  background_color = "Transparent",
+  output_container_and_codec = "webm_vp9",
+}: VideoBackgroundRemovalParams): Promise<VideoBackgroundRemovalResult> {
+  try {
+    // Convert blob URL to base64 data URI if needed
+    let processedVideoUrl = video_url;
+    if (video_url.startsWith('blob:')) {
+      processedVideoUrl = await blobUrlToDataUri(video_url);
+    }
+
+    const response = await fetch("/api/ai/remove-video-background", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        video_url: processedVideoUrl,
+        background_color,
+        output_container_and_codec,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Video background removal failed");
+    }
+
+    const data = await response.json();
+    return data as VideoBackgroundRemovalResult;
+  } catch (error) {
+    console.error("Video background removal error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to remove video background. Please try again."
     );
   }
 }

@@ -241,13 +241,36 @@ export function TimelineElement({
 
       // Update the media store with the new image
       const { mediaFiles } = useMediaStore.getState();
+      
+      // Convert blob to File for storage
+      const imageBlob = await fetch(newBlobUrl).then(r => r.blob());
+      const imageFile = new File([imageBlob], `${mediaItem.name}-no-bg.png`, {
+        type: "image/png",
+      });
+      
+      const updatedFile = {
+        ...mediaItem,
+        file: imageFile,
+        url: newBlobUrl,
+        name: `${mediaItem.name}-no-bg`,
+      };
+      
       useMediaStore.setState({
-        mediaFiles: mediaFiles.map(file => 
-          file.id === mediaItem.id 
-            ? { ...file, url: newBlobUrl, name: `${file.name}-no-bg` }
-            : file
+        mediaFiles: mediaFiles.map(f => 
+          f.id === mediaItem.id ? updatedFile : f
         )
       });
+
+      // Persist to storage
+      const { useProjectStore } = await import("@/stores/project-store");
+      const { storageService } = await import("@/lib/storage/storage-service");
+      const { activeProject } = useProjectStore.getState();
+      if (activeProject) {
+        await storageService.saveMediaFile({
+          projectId: activeProject.id,
+          mediaItem: updatedFile,
+        });
+      }
 
       // Clean up the old blob URL if it was a blob
       if (mediaItem.url.startsWith('blob:')) {
@@ -258,6 +281,94 @@ export function TimelineElement({
     } catch (error) {
       console.error("Background removal error:", error);
       toast.error("Failed to remove background", {
+        id: toastId,
+        description: error instanceof Error ? error.message : "Please try again",
+      });
+    }
+  };
+
+  const handleRemoveVideoBackground = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if element is a video
+    if (element.type !== "media") return;
+    
+    const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
+    if (!mediaItem || mediaItem.type !== "video" || !mediaItem.url) return;
+
+    // Show processing toast
+    const toastId = toast.loading("Removing video background... This may take a minute");
+
+    try {
+      // Dynamically import the removeVideoBackground function
+      const { removeVideoBackground } = await import("@/lib/fal-client");
+      
+      // Call the video background removal API with black background
+      // Note: Black works better for preview/export, can be keyed out later
+      const result = await removeVideoBackground({ 
+        video_url: mediaItem.url,
+        background_color: "Black",
+        output_container_and_codec: "webm_vp9",
+      });
+      
+      // Use the fal.ai URL directly - it has proper headers/codec info
+      // Fetching strips the content-type, so we'll fetch for File storage but use direct URL
+      const newVideoUrl = result.video.url;
+      
+      // Fetch blob for File storage
+      const response = await fetch(newVideoUrl);
+      const blob = await response.blob();
+      const file = new File([blob], result.video.file_name || `${mediaItem.name}-no-bg.webm`, {
+        type: "video/webm", // Type doesn't matter for File storage
+      });
+
+      // Generate thumbnail for the new video
+      const { generateVideoThumbnail } = await import("@/stores/media-store");
+      const { thumbnailUrl } = await generateVideoThumbnail(file);
+
+      // Clean up the old blob URLs FIRST
+      if (mediaItem.url.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaItem.url);
+      }
+      if (mediaItem.thumbnailUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaItem.thumbnailUrl);
+      }
+
+      // Update the media store with the new video (use direct fal.ai URL)
+      const { mediaFiles } = useMediaStore.getState();
+      const updatedFile = {
+        ...mediaItem,
+        file,
+        url: newVideoUrl, // Use fal.ai URL directly - has proper headers
+        thumbnailUrl,
+        name: `${mediaItem.name}-no-bg`,
+      };
+      
+      useMediaStore.setState({
+        mediaFiles: mediaFiles.map(f => 
+          f.id === mediaItem.id ? updatedFile : f
+        )
+      });
+
+      // Clear video cache AFTER updating state
+      const { videoCache } = await import("@/lib/video-cache");
+      videoCache.clearVideo(mediaItem.id);
+
+      // Persist to storage
+      const { useProjectStore } = await import("@/stores/project-store");
+      const { storageService } = await import("@/lib/storage/storage-service");
+      const { activeProject } = useProjectStore.getState();
+      if (activeProject) {
+        await storageService.saveMediaFile({
+          projectId: activeProject.id,
+          mediaItem: updatedFile,
+        });
+      }
+
+      toast.success("Video background removed successfully", { id: toastId });
+    } catch (error) {
+      console.error("Video background removal error:", error);
+      toast.error("Failed to remove video background", {
         id: toastId,
         description: error instanceof Error ? error.message : "Please try again",
       });
@@ -492,6 +603,12 @@ export function TimelineElement({
                   Remove Background
                 </ContextMenuItem>
               </>
+            )}
+            {mediaItem?.type === "video" && (
+              <ContextMenuItem onClick={handleRemoveVideoBackground}>
+                <Eraser className="h-4 w-4 mr-2" />
+                Remove Background
+              </ContextMenuItem>
             )}
           </>
         )}
