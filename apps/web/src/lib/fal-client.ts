@@ -1,4 +1,4 @@
-import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult } from "@/types/ai";
+import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult } from "@/types/ai";
 
 /**
  * Convert blob URL to base64 data URI
@@ -116,6 +116,45 @@ export async function generateVideo({
     console.error("Video generation error:", error);
     throw new Error(
       error instanceof Error ? error.message : "Failed to generate video. Please try again."
+    );
+  }
+}
+
+/**
+ * Remove background from an image using fal.ai's Bria RMBG 2.0 model
+ * Makes a server-side API call to protect the API key
+ */
+export async function removeBackground({
+  image_url,
+}: BackgroundRemovalParams): Promise<BackgroundRemovalResult> {
+  try {
+    // Convert blob URL to base64 data URI if needed
+    let processedImageUrl = image_url;
+    if (image_url.startsWith('blob:')) {
+      processedImageUrl = await blobUrlToDataUri(image_url);
+    }
+
+    const response = await fetch("/api/ai/remove-background", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image_url: processedImageUrl,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Background removal failed");
+    }
+
+    const data = await response.json();
+    return data as BackgroundRemovalResult;
+  } catch (error) {
+    console.error("Background removal error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to remove background. Please try again."
     );
   }
 }

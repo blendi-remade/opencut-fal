@@ -12,6 +12,7 @@ import {
   VolumeX,
   Sparkles,
   Video,
+  Eraser,
 } from "lucide-react";
 import { useMediaStore } from "@/stores/media-store";
 import { useTimelineStore } from "@/stores/timeline-store";
@@ -212,6 +213,55 @@ export function TimelineElement({
     toast("Ready to animate", {
       description: "Enter a prompt to bring this image to life",
     });
+  };
+
+  const handleRemoveBackground = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if element is an image
+    if (element.type !== "media") return;
+    
+    const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
+    if (!mediaItem || mediaItem.type !== "image" || !mediaItem.url) return;
+
+    // Show processing toast
+    const toastId = toast.loading("Removing background...");
+
+    try {
+      // Dynamically import the removeBackground function
+      const { removeBackground } = await import("@/lib/fal-client");
+      
+      // Call the background removal API
+      const result = await removeBackground({ image_url: mediaItem.url });
+      
+      // Fetch the result image and create a blob URL
+      const response = await fetch(result.image.url);
+      const blob = await response.blob();
+      const newBlobUrl = URL.createObjectURL(blob);
+
+      // Update the media store with the new image
+      const { mediaFiles } = useMediaStore.getState();
+      useMediaStore.setState({
+        mediaFiles: mediaFiles.map(file => 
+          file.id === mediaItem.id 
+            ? { ...file, url: newBlobUrl, name: `${file.name}-no-bg` }
+            : file
+        )
+      });
+
+      // Clean up the old blob URL if it was a blob
+      if (mediaItem.url.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaItem.url);
+      }
+
+      toast.success("Background removed successfully", { id: toastId });
+    } catch (error) {
+      console.error("Background removal error:", error);
+      toast.error("Failed to remove background", {
+        id: toastId,
+        description: error instanceof Error ? error.message : "Please try again",
+      });
+    }
   };
 
   const renderElementContent = () => {
@@ -436,6 +486,10 @@ export function TimelineElement({
                 <ContextMenuItem onClick={handleAnimateWithAI}>
                   <Video className="h-4 w-4 mr-2" />
                   Animate with AI
+                </ContextMenuItem>
+                <ContextMenuItem onClick={handleRemoveBackground}>
+                  <Eraser className="h-4 w-4 mr-2" />
+                  Remove Background
                 </ContextMenuItem>
               </>
             )}

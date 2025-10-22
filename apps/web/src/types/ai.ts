@@ -63,3 +63,13 @@ export interface VideoGenerationHistoryItem {
   result: VideoGenerationResult;
   timestamp: number;
 }
+
+// Background removal types
+export interface BackgroundRemovalParams {
+  image_url: string;
+  sync_mode?: boolean;
+}
+
+export interface BackgroundRemovalResult {
+  image: AIGeneratedImage;
+}
