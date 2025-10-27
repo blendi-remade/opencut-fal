@@ -1,6 +1,6 @@
 export type AspectRatio = "21:9" | "1:1" | "4:3" | "3:2" | "2:3" | "5:4" | "4:5" | "3:4" | "16:9" | "9:16";
 export type OutputFormat = "jpeg" | "png" | "webp";
-export type AIMode = "image" | "video";
+export type AIMode = "image" | "video" | "tts";
 export type VideoDuration = "8s";
 export type VideoResolution = "720p" | "1080p";
 export type VideoAspectRatio = "16:9" | "9:16";
@@ -82,4 +82,40 @@ export interface VideoBackgroundRemovalParams {
 
 export interface VideoBackgroundRemovalResult {
   video: AIGeneratedVideo;
+}
+
+// Text-to-Speech types
+export type TTSOutputFormat = 
+  | "mp3_44100_128" | "mp3_44100_192" | "mp3_44100_96" | "mp3_44100_64" | "mp3_44100_32" | "mp3_22050_32"
+  | "pcm_44100" | "pcm_24000" | "pcm_22050" | "pcm_16000" | "pcm_8000"
+  | "ulaw_8000" | "alaw_8000";
+
+// ElevenLabs voices
+export type TTSVoice = 
+  | "Alice" | "Matilda" | "Will" | "Jessica" | "Eric" | "Erifis" 
+  | "Brian" | "Daniel" | "Lily" | "Bill" | "Aria" | "Roger"
+  | "Sarah" | "Laura" | "Charlie" | "George" | "Callum" | "River"
+  | "Liam" | "Charlotte";
+
+export interface TTSParams {
+  text: string;
+  voice?: TTSVoice;
+  stability?: number; // 0-1, default 0.5
+  similarity_boost?: number; // 0-1, default 0.75
+  style?: number; // 0-1
+  speed?: number; // 0.7-1.2, default 1
+  output_format?: TTSOutputFormat;
+  language_code?: string; // ISO 639-1
+}
+
+export interface AIGeneratedAudio {
+  url: string;
+  content_type?: string;
+  file_name?: string;
+  file_size?: number;
+  duration_seconds?: number;
+}
+
+export interface TTSResult {
+  audio: AIGeneratedAudio;
 }

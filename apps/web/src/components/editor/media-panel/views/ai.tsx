@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useAIStore } from "@/stores/ai-store";
-import { Loader2, Sparkles, Image as ImageIcon, Download, X, ChevronDown, ChevronUp, Video } from "lucide-react";
+import { Loader2, Sparkles, Image as ImageIcon, Download, X, ChevronDown, ChevronUp, Video, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import Image from "next/image";
-import type { AspectRatio, OutputFormat, VideoDuration, VideoResolution, VideoAspectRatio, AIMode } from "@/types/ai";
+import type { AspectRatio, OutputFormat, VideoDuration, VideoResolution, VideoAspectRatio, AIMode, TTSVoice } from "@/types/ai";
+import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string }[] = [
   { value: "1:1", label: "Square (1:1)" },
@@ -48,6 +50,29 @@ const VIDEO_DURATIONS: { value: VideoDuration; label: string }[] = [
 const VIDEO_RESOLUTIONS: { value: VideoResolution; label: string }[] = [
   { value: "720p", label: "720p" },
   { value: "1080p", label: "1080p" },
+];
+
+const TTS_VOICES: { value: TTSVoice; label: string }[] = [
+  { value: "Alice", label: "Alice" },
+  { value: "Aria", label: "Aria" },
+  { value: "Bill", label: "Bill" },
+  { value: "Brian", label: "Brian" },
+  { value: "Callum", label: "Callum" },
+  { value: "Charlotte", label: "Charlotte" },
+  { value: "Charlie", label: "Charlie" },
+  { value: "Daniel", label: "Daniel" },
+  { value: "Eric", label: "Eric" },
+  { value: "Erifis", label: "Erifis" },
+  { value: "George", label: "George" },
+  { value: "Jessica", label: "Jessica" },
+  { value: "Laura", label: "Laura" },
+  { value: "Liam", label: "Liam" },
+  { value: "Lily", label: "Lily" },
+  { value: "Matilda", label: "Matilda" },
+  { value: "River", label: "River" },
+  { value: "Roger", label: "Roger" },
+  { value: "Sarah", label: "Sarah" },
+  { value: "Will", label: "Will" },
 ];
 
 export function AIView() {
@@ -88,6 +113,23 @@ export function AIView() {
     addVideoToTimeline,
     clearVideoError,
     clearVideoReferenceImage,
+    // TTS
+    ttsText,
+    ttsVoice,
+    ttsStability,
+    ttsSimilarityBoost,
+    ttsSpeed,
+    isGeneratingTTS,
+    currentTTSResult,
+    ttsError,
+    setTTSText,
+    setTTSVoice,
+    setTTSStability,
+    setTTSSimilarityBoost,
+    setTTSSpeed,
+    generateTTSAudio,
+    addTTSToTimeline,
+    clearTTSError,
   } = useAIStore();
 
   const [addingToTimeline, setAddingToTimeline] = useState<string | null>(null);
@@ -126,6 +168,22 @@ export function AIView() {
     }
   };
 
+  const handleGenerateTTS = async () => {
+    await generateTTSAudio();
+  };
+
+  const handleAddTTSToTimeline = async (audioUrl: string) => {
+    setAddingToTimeline(audioUrl);
+    try {
+      await addTTSToTimeline(audioUrl);
+      toast("Audio added to timeline");
+    } catch (error) {
+      toast.error("Failed to add audio to timeline");
+    } finally {
+      setAddingToTimeline(null);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 mt-1 h-full p-4">
       {/* Mode Selector */}
@@ -133,6 +191,7 @@ export function AIView() {
         options={[
           { value: "image" as AIMode, label: "Image" },
           { value: "video" as AIMode, label: "Video" },
+          { value: "tts" as AIMode, label: "TTS" },
         ]}
         value={mode}
         onChange={setMode}
@@ -159,7 +218,7 @@ export function AIView() {
             handleGenerate={handleGenerate}
             clearError={clearError}
           />
-        ) : (
+        ) : mode === "video" ? (
           <VideoGenerationForm
             videoPrompt={videoPrompt}
             videoAspectRatio={videoAspectRatio}
@@ -177,6 +236,23 @@ export function AIView() {
             clearVideoReferenceImage={clearVideoReferenceImage}
             handleGenerateVideo={handleGenerateVideo}
             clearVideoError={clearVideoError}
+          />
+        ) : (
+          <TTSGenerationForm
+            ttsText={ttsText}
+            ttsVoice={ttsVoice}
+            ttsStability={ttsStability}
+            ttsSimilarityBoost={ttsSimilarityBoost}
+            ttsSpeed={ttsSpeed}
+            isGeneratingTTS={isGeneratingTTS}
+            ttsError={ttsError}
+            setTTSText={setTTSText}
+            setTTSVoice={setTTSVoice}
+            setTTSStability={setTTSStability}
+            setTTSSimilarityBoost={setTTSSimilarityBoost}
+            setTTSSpeed={setTTSSpeed}
+            handleGenerateTTS={handleGenerateTTS}
+            clearTTSError={clearTTSError}
           />
         )}
       </div>
@@ -200,7 +276,7 @@ export function AIView() {
               )}
 
             </>
-          ) : (
+          ) : mode === "video" ? (
             <>
               {/* Current Video Result */}
               {currentVideoResult && (
@@ -210,6 +286,21 @@ export function AIView() {
                     video={currentVideoResult.video}
                     onAddToTimeline={handleAddVideoToTimeline}
                     isAdding={addingToTimeline === currentVideoResult.video.url}
+                  />
+                </div>
+              )}
+
+            </>
+          ) : (
+            <>
+              {/* Current TTS Result */}
+              {currentTTSResult && (
+                <div className="space-y-2">
+                  <h3 className="text-xs font-medium text-muted-foreground">Generated Audio</h3>
+                  <GeneratedAudioCard
+                    audio={currentTTSResult.audio}
+                    onAddToTimeline={handleAddTTSToTimeline}
+                    isAdding={addingToTimeline === currentTTSResult.audio.url}
                   />
                 </div>
               )}
@@ -592,6 +683,178 @@ function VideoGenerationForm({
   );
 }
 
+// TTS Generation Form Component
+function TTSGenerationForm({
+  ttsText,
+  ttsVoice,
+  ttsStability,
+  ttsSimilarityBoost,
+  ttsSpeed,
+  isGeneratingTTS,
+  ttsError,
+  setTTSText,
+  setTTSVoice,
+  setTTSStability,
+  setTTSSimilarityBoost,
+  setTTSSpeed,
+  handleGenerateTTS,
+  clearTTSError,
+}: {
+  ttsText: string;
+  ttsVoice: TTSVoice;
+  ttsStability: number;
+  ttsSimilarityBoost: number;
+  ttsSpeed: number;
+  isGeneratingTTS: boolean;
+  ttsError: string | null;
+  setTTSText: (text: string) => void;
+  setTTSVoice: (voice: TTSVoice) => void;
+  setTTSStability: (stability: number) => void;
+  setTTSSimilarityBoost: (boost: number) => void;
+  setTTSSpeed: (speed: number) => void;
+  handleGenerateTTS: () => void;
+  clearTTSError: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {/* Text Input */}
+      <div className="space-y-1.5">
+        <Label htmlFor="tts-text" className="text-xs">
+          Text to Speech
+        </Label>
+        <Textarea
+          id="tts-text"
+          placeholder="Enter text to convert to speech..."
+          value={ttsText}
+          onChange={(e) => setTTSText(e.target.value)}
+          disabled={isGeneratingTTS}
+          className="min-h-[100px] resize-none"
+        />
+      </div>
+
+      {/* Voice Selection */}
+      <div className="space-y-1.5">
+        <Label htmlFor="tts-voice" className="text-xs">Voice</Label>
+        <Select
+          value={ttsVoice}
+          onValueChange={(value) => setTTSVoice(value as TTSVoice)}
+          disabled={isGeneratingTTS}
+        >
+          <SelectTrigger id="tts-voice" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TTS_VOICES.map((voice) => (
+              <SelectItem key={voice.value} value={voice.value}>
+                {voice.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Advanced Settings */}
+      <div className="space-y-3 pt-2">
+        {/* Stability */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between">
+            <Label htmlFor="tts-stability" className="text-xs">
+              Stability
+            </Label>
+            <span className="text-xs text-muted-foreground">{ttsStability.toFixed(2)}</span>
+          </div>
+          <Slider
+            id="tts-stability"
+            min={0}
+            max={1}
+            step={0.01}
+            value={[ttsStability]}
+            onValueChange={(value) => setTTSStability(value[0])}
+            disabled={isGeneratingTTS}
+          />
+        </div>
+
+        {/* Similarity Boost */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between">
+            <Label htmlFor="tts-similarity" className="text-xs">
+              Similarity
+            </Label>
+            <span className="text-xs text-muted-foreground">{ttsSimilarityBoost.toFixed(2)}</span>
+          </div>
+          <Slider
+            id="tts-similarity"
+            min={0}
+            max={1}
+            step={0.01}
+            value={[ttsSimilarityBoost]}
+            onValueChange={(value) => setTTSSimilarityBoost(value[0])}
+            disabled={isGeneratingTTS}
+          />
+        </div>
+
+        {/* Speed */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between">
+            <Label htmlFor="tts-speed" className="text-xs">
+              Speed
+            </Label>
+            <span className="text-xs text-muted-foreground">{ttsSpeed.toFixed(2)}x</span>
+          </div>
+          <Slider
+            id="tts-speed"
+            min={0.7}
+            max={1.2}
+            step={0.01}
+            value={[ttsSpeed]}
+            onValueChange={(value) => setTTSSpeed(value[0])}
+            disabled={isGeneratingTTS}
+          />
+        </div>
+      </div>
+
+      {/* Generate Button */}
+      <Button
+        type="button"
+        onClick={handleGenerateTTS}
+        disabled={isGeneratingTTS || !ttsText.trim()}
+        className="w-full h-9"
+        size="sm"
+        aria-label="Generate speech"
+      >
+        {isGeneratingTTS ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Generating...
+          </>
+        ) : (
+          <>
+            <Volume2 className="h-3.5 w-3.5" />
+            Generate Speech
+          </>
+        )}
+      </Button>
+
+      {/* Error Display */}
+      {ttsError && (
+        <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md flex justify-between items-center">
+          <span>{ttsError}</span>
+          <Button
+            type="button"
+            variant="text"
+            size="icon"
+            onClick={clearTTSError}
+            className="h-auto w-auto p-0"
+            aria-label="Dismiss error"
+          >
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GeneratedImageCard({
   image,
   description,
@@ -681,6 +944,55 @@ function GeneratedVideoCard({
           disabled={isAdding}
           className="w-full h-8"
           aria-label="Add generated video to timeline"
+        >
+          <Download className="h-3 w-3" />
+          Add to Timeline
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function GeneratedAudioCard({
+  audio,
+  onAddToTimeline,
+  isAdding,
+}: {
+  audio: { url: string; duration_seconds?: number };
+  onAddToTimeline: (url: string) => void;
+  isAdding: boolean;
+}) {
+  return (
+    <div className={cn(
+      "relative group rounded-lg border border-input bg-accent/50 overflow-hidden",
+      isAdding && "opacity-50 pointer-events-none"
+    )}>
+      <div className="relative w-full p-4 bg-gradient-to-br from-primary/5 to-primary/10">
+        <div className="flex items-center justify-center gap-3">
+          <Volume2 className="h-8 w-8 text-primary" />
+          <div className="flex-1">
+            <audio
+              src={audio.url}
+              controls
+              className="w-full"
+              preload="metadata"
+            />
+          </div>
+        </div>
+        {isAdding && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-white" />
+          </div>
+        )}
+      </div>
+      <div className="p-2.5">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onAddToTimeline(audio.url)}
+          disabled={isAdding}
+          className="w-full h-8"
+          aria-label="Add generated audio to timeline"
         >
           <Download className="h-3 w-3" />
           Add to Timeline

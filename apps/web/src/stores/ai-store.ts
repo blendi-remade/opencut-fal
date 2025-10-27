@@ -12,10 +12,14 @@ import type {
   VideoGenerationHistoryItem,
   VideoDuration,
   VideoResolution,
-  VideoAspectRatio
+  VideoAspectRatio,
+  TTSParams,
+  TTSResult,
+  TTSVoice,
+  TTSOutputFormat
 } from "@/types/ai";
 import type { MediaFile } from "@/types/media";
-import { generateImage, generateVideo } from "@/lib/fal-client";
+import { generateImage, generateVideo, generateTTS } from "@/lib/fal-client";
 
 interface AIStore {
   // Mode
@@ -40,6 +44,17 @@ interface AIStore {
   currentVideoResult: VideoGenerationResult | null;
   videoError: string | null;
   videoReferenceImageUrl: string | null;
+  
+  // TTS state
+  ttsText: string;
+  ttsVoice: TTSVoice;
+  ttsStability: number;
+  ttsSimilarityBoost: number;
+  ttsSpeed: number;
+  ttsOutputFormat: TTSOutputFormat;
+  isGeneratingTTS: boolean;
+  currentTTSResult: TTSResult | null;
+  ttsError: string | null;
   
   // Track current project to clear session on project switch
   currentProjectId: string | null;
@@ -69,6 +84,17 @@ interface AIStore {
   addVideoToTimeline: (videoUrl: string) => Promise<void>;
   clearVideoError: () => void;
   
+  // TTS actions
+  setTTSText: (text: string) => void;
+  setTTSVoice: (voice: TTSVoice) => void;
+  setTTSStability: (stability: number) => void;
+  setTTSSimilarityBoost: (boost: number) => void;
+  setTTSSpeed: (speed: number) => void;
+  setTTSOutputFormat: (format: TTSOutputFormat) => void;
+  generateTTSAudio: () => Promise<void>;
+  addTTSToTimeline: (audioUrl: string) => Promise<void>;
+  clearTTSError: () => void;
+  
   clearProjectSession: (projectId: string | null) => void;
 }
 
@@ -97,6 +123,17 @@ export const useAIStore = create<AIStore>()(
       currentVideoResult: null,
       videoError: null,
       videoReferenceImageUrl: null,
+      
+      // TTS state
+      ttsText: "",
+      ttsVoice: "Brian",
+      ttsStability: 0.5,
+      ttsSimilarityBoost: 0.75,
+      ttsSpeed: 1.0,
+      ttsOutputFormat: "mp3_44100_128",
+      isGeneratingTTS: false,
+      currentTTSResult: null,
+      ttsError: null,
       
       currentProjectId: null,
 
@@ -376,8 +413,138 @@ export const useAIStore = create<AIStore>()(
 
       clearVideoError: () => set({ videoError: null }),
       
+      // TTS actions
+      setTTSText: (ttsText) => set({ ttsText }),
+      setTTSVoice: (ttsVoice) => set({ ttsVoice }),
+      setTTSStability: (ttsStability) => set({ ttsStability }),
+      setTTSSimilarityBoost: (ttsSimilarityBoost) => set({ ttsSimilarityBoost }),
+      setTTSSpeed: (ttsSpeed) => set({ ttsSpeed }),
+      setTTSOutputFormat: (ttsOutputFormat) => set({ ttsOutputFormat }),
+
+      generateTTSAudio: async () => {
+        const { ttsText, ttsVoice, ttsStability, ttsSimilarityBoost, ttsSpeed, ttsOutputFormat } = get();
+        
+        if (!ttsText.trim()) {
+          set({ ttsError: "Please enter text to convert to speech" });
+          return;
+        }
+
+        set({ 
+          isGeneratingTTS: true, 
+          ttsError: null, 
+          currentTTSResult: null,
+        });
+
+        try {
+          const params: TTSParams = {
+            text: ttsText.trim(),
+            voice: ttsVoice,
+            stability: ttsStability,
+            similarity_boost: ttsSimilarityBoost,
+            speed: ttsSpeed,
+            output_format: ttsOutputFormat,
+          };
+
+          const result = await generateTTS(params);
+          
+          // Clean up previous result's blob URL
+          const { currentTTSResult } = get();
+          if (currentTTSResult && currentTTSResult.audio.url.startsWith('blob:')) {
+            URL.revokeObjectURL(currentTTSResult.audio.url);
+          }
+          
+          set({ currentTTSResult: result });
+        } catch (error) {
+          console.error("TTS generation failed:", error);
+          set({ 
+            ttsError: error instanceof Error ? error.message : "TTS generation failed"
+          });
+        } finally {
+          set({ isGeneratingTTS: false });
+        }
+      },
+
+      addTTSToTimeline: async (audioUrl: string) => {
+        try {
+          const { useProjectStore } = await import("@/stores/project-store");
+          const { useMediaStore } = await import("@/stores/media-store");
+          const { useTimelineStore } = await import("@/stores/timeline-store");
+          const { usePlaybackStore } = await import("@/stores/playback-store");
+
+          const { activeProject } = useProjectStore.getState();
+          if (!activeProject) {
+            throw new Error("No active project");
+          }
+
+          // Fetch the audio to create file
+          const response = await fetch(audioUrl);
+          const blob = await response.blob();
+          const file = new File([blob], `tts-${Date.now()}.mp3`, {
+            type: "audio/mpeg",
+          });
+
+          const blobUrl = URL.createObjectURL(file);
+          
+          // Get duration using audio element
+          const audio = document.createElement("audio");
+          const duration = await new Promise<number>((resolve, reject) => {
+            audio.onloadedmetadata = () => {
+              const dur = audio.duration;
+              audio.pause();
+              audio.removeAttribute('src');
+              audio.load();
+              audio.remove();
+              resolve(dur);
+            };
+            audio.onerror = () => {
+              audio.remove();
+              reject(new Error("Failed to load audio metadata"));
+            };
+            audio.src = blobUrl;
+          });
+
+          const mediaItem: Omit<MediaFile, "id"> = {
+            name: `TTS: ${get().ttsText.slice(0, 30)}...`,
+            type: "audio",
+            file,
+            url: blobUrl,
+            duration,
+            ephemeral: false,
+          };
+
+          const { addMediaFile } = useMediaStore.getState();
+          await addMediaFile(activeProject.id, mediaItem);
+
+          const added = useMediaStore
+            .getState()
+            .mediaFiles.find((m) => m.url === mediaItem.url);
+            
+          if (!added) {
+            throw new Error("Failed to add to media store");
+          }
+
+          const { currentTime } = usePlaybackStore.getState();
+          const { addElementAtTime } = useTimelineStore.getState();
+          addElementAtTime(added, currentTime);
+          
+          // Clear current result after successfully adding to timeline
+          const { currentTTSResult } = get();
+          if (currentTTSResult?.audio.url === audioUrl) {
+            if (audioUrl.startsWith('blob:')) {
+              URL.revokeObjectURL(audioUrl);
+            }
+            set({ currentTTSResult: null });
+          }
+        } catch (error) {
+          console.error("Failed to add TTS to timeline:", error);
+          throw error;
+        }
+      },
+
+      clearTTSError: () => set({ ttsError: null }),
+      
       clearProjectSession: (projectId: string | null) => {
-        const { currentProjectId, currentResult, currentVideoResult } = get();
+        const { currentProjectId, currentResult, currentVideoResult, currentTTSResult } = get();
         
         // If switching to a different project or closing project, clear the session
         if (currentProjectId !== projectId) {
@@ -394,6 +561,10 @@ export const useAIStore = create<AIStore>()(
             URL.revokeObjectURL(currentVideoResult.video.url);
           }
           
+          if (currentTTSResult && currentTTSResult.audio.url.startsWith('blob:')) {
+            URL.revokeObjectURL(currentTTSResult.audio.url);
+          }
+          
           set({
             currentProjectId: projectId,
             mode: "image",
@@ -405,6 +576,9 @@ export const useAIStore = create<AIStore>()(
             videoPrompt: "",
             videoError: null,
             videoReferenceImageUrl: null,
+            currentTTSResult: null,
+            ttsText: "",
+            ttsError: null,
           });
         }
       },
@@ -418,6 +592,11 @@ export const useAIStore = create<AIStore>()(
         videoDuration: state.videoDuration,
         videoResolution: state.videoResolution,
         generateAudio: state.generateAudio,
+        ttsVoice: state.ttsVoice,
+        ttsStability: state.ttsStability,
+        ttsSimilarityBoost: state.ttsSimilarityBoost,
+        ttsSpeed: state.ttsSpeed,
+        ttsOutputFormat: state.ttsOutputFormat,
       }),
     }
   )

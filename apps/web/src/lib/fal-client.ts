@@ -1,4 +1,4 @@
-import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult, VideoBackgroundRemovalParams, VideoBackgroundRemovalResult } from "@/types/ai";
+import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult, VideoBackgroundRemovalParams, VideoBackgroundRemovalResult, TTSParams, TTSResult } from "@/types/ai";
 
 /**
  * Convert blob URL to base64 data URI
@@ -198,6 +198,53 @@ export async function removeVideoBackground({
     console.error("Video background removal error:", error);
     throw new Error(
       error instanceof Error ? error.message : "Failed to remove video background. Please try again."
+    );
+  }
+}
+
+/**
+ * Generate speech from text using fal.ai's ElevenLabs TTS Turbo v2.5 model
+ * Makes a server-side API call to protect the API key
+ */
+export async function generateTTS({
+  text,
+  voice = "Brian",
+  stability = 0.5,
+  similarity_boost = 0.75,
+  style,
+  speed = 1.0,
+  output_format = "mp3_44100_128",
+  language_code,
+}: TTSParams): Promise<TTSResult> {
+  try {
+    const response = await fetch("/api/ai/text-to-speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        voice,
+        stability,
+        similarity_boost,
+        ...(style !== undefined && { style }),
+        speed,
+        output_format,
+        ...(language_code && { language_code }),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "TTS generation failed");
+    }
+
+    const data = await response.json();
+    return data as TTSResult;
+  } catch (error) {
+    console.error("TTS generation error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to generate speech. Please try again."
     );
   }
 }
