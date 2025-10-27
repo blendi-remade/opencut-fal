@@ -137,7 +137,7 @@ export class VideoCache {
       }
 
       const sink = new CanvasSink(videoTrack, {
-        poolSize: 3,
+        poolSize: 30, // Increased from 3 to 30 for better video performance
         fit: "contain",
       });
 

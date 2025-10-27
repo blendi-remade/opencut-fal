@@ -27,7 +27,7 @@ const __sharedFrameCache: Map<number, CachedFrame> =
 __frameCacheGlobal.__sharedFrameCache = __sharedFrameCache;
 
 export function useFrameCache(options: FrameCacheOptions = {}) {
-  const { maxCacheSize = 300, cacheResolution = 30 } = options; // 10 seconds at 30fps
+  const { maxCacheSize = 60, cacheResolution = 30 } = options; // 2 seconds at 30fps - reduced from 300 to save memory
 
   const frameCacheRef = useRef(__sharedFrameCache);
 
@@ -110,21 +110,13 @@ export function useFrameCache(options: FrameCacheOptions = {}) {
         }
       }
 
-      // Include project settings that affect rendering
-      const projectState = {
-        backgroundColor: activeProject?.backgroundColor,
-        backgroundType: activeProject?.backgroundType,
-        blurIntensity: activeProject?.blurIntensity,
-        canvasSize: activeProject?.canvasSize,
-      };
-
-      const hash = {
-        activeElements,
-        projectState,
-        sceneId,
-        time: Math.floor(time * cacheResolution) / cacheResolution,
-      };
-      return JSON.stringify(hash);
+      // Create a simple, fast hash string instead of expensive JSON.stringify
+      const elementIds = activeElements.map(e => `${e.id}:${e.mediaId || e.content}`).join(',');
+      const bgHash = `${activeProject?.backgroundColor}_${activeProject?.backgroundType}_${activeProject?.blurIntensity}`;
+      const canvasHash = `${activeProject?.canvasSize?.width}x${activeProject?.canvasSize?.height}`;
+      const timeHash = Math.floor(time * cacheResolution) / cacheResolution;
+      
+      return `${timeHash}_${elementIds}_${bgHash}_${canvasHash}_${sceneId || ''}`;
     },
     [cacheResolution]
   );
@@ -178,16 +170,8 @@ export function useFrameCache(options: FrameCacheOptions = {}) {
         activeProject,
         sceneId
       );
-      console.log(cached.timelineHash === currentHash);
       if (cached.timelineHash !== currentHash) {
         // Cache is stale, remove it
-        console.log(
-          "Cache miss - hash mismatch:",
-          JSON.stringify({
-            cachedHash: cached.timelineHash.slice(0, 100),
-            currentHash: currentHash.slice(0, 100),
-          })
-        );
         frameCacheRef.current.delete(frameKey);
         return null;
       }
@@ -310,8 +294,8 @@ export function useFrameCache(options: FrameCacheOptions = {}) {
         return da - db;
       });
 
-      // Cap total scheduled renders to avoid jank (e.g., up to 90 frames)
-      const CAP = Math.max(30, Math.min(90, cacheResolution * 3));
+      // Cap total scheduled renders to avoid jank - reduced from 90 to 20 for better performance
+      const CAP = Math.min(20, cacheResolution);
       const toSchedule = expandedTimes.slice(0, CAP);
 
       // Pre-render during idle time

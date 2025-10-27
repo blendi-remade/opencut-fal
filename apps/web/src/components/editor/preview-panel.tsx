@@ -52,7 +52,9 @@ export function PreviewPanel() {
     useFrameCache();
   const prevQualityRef = useRef(previewQuality);
   const lastFrameTimeRef = useRef(0);
+  const lastRenderedTimeRef = useRef(-1); // Track last rendered time to skip unnecessary renders
   const renderSeqRef = useRef(0);
+  const isRenderingRef = useRef(false); // Lock to prevent concurrent renders
   const offscreenCanvasRef = useRef<OffscreenCanvas | HTMLCanvasElement | null>(
     null
   );
@@ -480,6 +482,17 @@ export function PreviewPanel() {
   // Canvas: draw current frame with caching
   useEffect(() => {
     const draw = async () => {
+      // Prevent concurrent renders to avoid blocking the main thread
+      if (isRenderingRef.current) {
+        return;
+      }
+      
+      // Skip render if time hasn't changed (prevents re-renders on unrelated state changes)
+      const timeThreshold = 0.001; // 1ms threshold
+      if (!isPlaying && Math.abs(currentTime - lastRenderedTimeRef.current) < timeThreshold) {
+        return;
+      }
+      
       const canvas = canvasRef.current;
       if (!canvas) return;
       const mainCtx = canvas.getContext("2d");
@@ -506,93 +519,64 @@ export function PreviewPanel() {
         }
         lastFrameTimeRef.current = currentTime;
       }
+      
+      // Set rendering lock
+      isRenderingRef.current = true;
 
-      const cachedFrame = getCachedFrame(
-        currentTime,
-        tracks,
-        mediaFiles,
-        activeProject,
-        currentScene?.id
-      );
-      if (cachedFrame) {
-        mainCtx.putImageData(cachedFrame, 0, 0);
+      try {
+        const cachedFrame = getCachedFrame(
+          currentTime,
+          tracks,
+          mediaFiles,
+          activeProject,
+          currentScene?.id
+        );
+        if (cachedFrame) {
+          mainCtx.putImageData(cachedFrame, 0, 0);
+          lastRenderedTimeRef.current = currentTime; // Update last rendered time
 
-        // Pre-render nearby frames in background
-        if (!isPlaying) {
-          // Only during scrubbing to avoid interfering with playback
-          preRenderNearbyFrames(
-            currentTime,
-            tracks,
-            mediaFiles,
-            activeProject,
-            async (time: number) => {
-              const tempCanvas = document.createElement("canvas");
-              tempCanvas.width = displayWidth;
-              tempCanvas.height = displayHeight;
-              const tempCtx = tempCanvas.getContext("2d");
-              if (!tempCtx)
-                throw new Error("Failed to create temp canvas context");
+          // Disable pre-rendering completely during playback to reduce main thread blocking
+          // Only pre-render during scrubbing (paused state)
+          if (!isPlaying) {
+            // Only during scrubbing to avoid interfering with playback
+            preRenderNearbyFrames(
+              currentTime,
+              tracks,
+              mediaFiles,
+              activeProject,
+              async (time: number) => {
+                const tempCanvas = document.createElement("canvas");
+                tempCanvas.width = displayWidth;
+                tempCanvas.height = displayHeight;
+                const tempCtx = tempCanvas.getContext("2d");
+                if (!tempCtx)
+                  throw new Error("Failed to create temp canvas context");
 
-              await renderTimelineFrame({
-                ctx: tempCtx,
-                time,
-                canvasWidth: displayWidth,
-                canvasHeight: displayHeight,
-                tracks,
-                mediaFiles,
-                backgroundType: activeProject?.backgroundType,
-                blurIntensity: activeProject?.blurIntensity,
-                backgroundColor:
-                  activeProject?.backgroundType === "blur"
-                    ? undefined
-                    : activeProject?.backgroundColor || "#000000",
-                projectCanvasSize: canvasSize,
-              });
+                await renderTimelineFrame({
+                  ctx: tempCtx,
+                  time,
+                  canvasWidth: displayWidth,
+                  canvasHeight: displayHeight,
+                  tracks,
+                  mediaFiles,
+                  backgroundType: activeProject?.backgroundType,
+                  blurIntensity: activeProject?.blurIntensity,
+                  backgroundColor:
+                    activeProject?.backgroundType === "blur"
+                      ? undefined
+                      : activeProject?.backgroundColor || "#000000",
+                  projectCanvasSize: canvasSize,
+                });
 
-              return tempCtx.getImageData(0, 0, displayWidth, displayHeight);
-            },
-            currentScene?.id,
-            3
-          );
-        } else {
-          // Small lookahead while playing
-          preRenderNearbyFrames(
-            currentTime,
-            tracks,
-            mediaFiles,
-            activeProject,
-            async (time: number) => {
-              const tempCanvas = document.createElement("canvas");
-              tempCanvas.width = displayWidth;
-              tempCanvas.height = displayHeight;
-              const tempCtx = tempCanvas.getContext("2d");
-              if (!tempCtx)
-                throw new Error("Failed to create temp canvas context");
-
-              await renderTimelineFrame({
-                ctx: tempCtx,
-                time,
-                canvasWidth: displayWidth,
-                canvasHeight: displayHeight,
-                tracks,
-                mediaFiles,
-                backgroundType: activeProject?.backgroundType,
-                blurIntensity: activeProject?.blurIntensity,
-                backgroundColor:
-                  activeProject?.backgroundType === "blur"
-                    ? undefined
-                    : activeProject?.backgroundColor || "#000000",
-                projectCanvasSize: canvasSize,
-              });
-
-              return tempCtx.getImageData(0, 0, displayWidth, displayHeight);
-            },
-            currentScene?.id,
-            1
-          );
+                return tempCtx.getImageData(0, 0, displayWidth, displayHeight);
+              },
+              currentScene?.id,
+              0.5 // Reduced from 1 to 0.5 seconds
+            );
+          }
+          // No pre-rendering during playback - disabled to improve performance
+          return;
         }
-        return;
-      }
 
       // Cache miss - render from scratch
       if (!offscreenCanvasRef.current) {
@@ -674,16 +658,23 @@ export function PreviewPanel() {
         currentScene?.id
       );
 
-      // Blit offscreen to visible canvas
-      mainCtx.clearRect(0, 0, displayWidth, displayHeight);
-      if ((offscreenCanvas as HTMLCanvasElement).getContext) {
-        mainCtx.drawImage(offscreenCanvas as HTMLCanvasElement, 0, 0);
-      } else {
-        mainCtx.drawImage(
-          offscreenCanvas as unknown as CanvasImageSource,
-          0,
-          0
-        );
+        // Blit offscreen to visible canvas
+        mainCtx.clearRect(0, 0, displayWidth, displayHeight);
+        if ((offscreenCanvas as HTMLCanvasElement).getContext) {
+          mainCtx.drawImage(offscreenCanvas as HTMLCanvasElement, 0, 0);
+        } else {
+          mainCtx.drawImage(
+            offscreenCanvas as unknown as CanvasImageSource,
+            0,
+            0
+          );
+        }
+        
+        // Update last rendered time
+        lastRenderedTimeRef.current = currentTime;
+      } finally {
+        // Always release the rendering lock
+        isRenderingRef.current = false;
       }
     };
 
