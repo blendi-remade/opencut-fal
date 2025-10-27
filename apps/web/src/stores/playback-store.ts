@@ -11,9 +11,11 @@ interface PlaybackStore extends PlaybackState, PlaybackControls {
 }
 
 let playbackTimer: number | null = null;
+let updateFrameCount = 0; // Track frames for throttling events
 
 const startTimer = (store: () => PlaybackStore) => {
   if (playbackTimer) cancelAnimationFrame(playbackTimer);
+  updateFrameCount = 0; // Reset frame counter
 
   // Use requestAnimationFrame for smoother updates
   const updateTime = () => {
@@ -24,6 +26,7 @@ const startTimer = (store: () => PlaybackStore) => {
       lastUpdate = now;
 
       const newTime = state.currentTime + delta * state.speed;
+      updateFrameCount++;
 
       // Get actual content duration from timeline store
       const actualContentDuration = useTimelineStore
@@ -54,10 +57,12 @@ const startTimer = (store: () => PlaybackStore) => {
         );
       } else {
         state.setCurrentTime(newTime);
-        // Notify video elements to sync
-        window.dispatchEvent(
-          new CustomEvent("playback-update", { detail: { time: newTime } })
-        );
+        // Throttle playback-update events - only dispatch every 2 frames for better performance
+        if (updateFrameCount % 2 === 0) {
+          window.dispatchEvent(
+            new CustomEvent("playback-update", { detail: { time: newTime } })
+          );
+        }
       }
     }
     playbackTimer = requestAnimationFrame(updateTime);
@@ -82,7 +87,7 @@ export const usePlaybackStore = create<PlaybackStore>((set, get) => ({
   muted: false,
   previousVolume: 1,
   speed: 1.0,
-  previewQuality: 0.75, // Start at 75% for better performance on most machines
+  previewQuality: 0.5, // Start at 50% for better performance (Quick Win optimization)
 
   play: () => {
     const state = get();

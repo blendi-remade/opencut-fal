@@ -8,7 +8,7 @@ import { usePlaybackStore } from "@/stores/playback-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, Expand, SkipBack, SkipForward } from "lucide-react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { renderTimelineFrame } from "@/lib/timeline-renderer";
 import { cn } from "@/lib/utils";
 import { formatTimeCode } from "@/lib/time";
@@ -266,7 +266,10 @@ export function PreviewPanel() {
 
   const hasAnyElements = tracks.some((track) => track.elements.length > 0);
   const shouldRenderPreview = hasAnyElements || activeProject?.backgroundType;
-  const getActiveElements = (): ActiveElement[] => {
+  
+  // Memoize active elements calculation to prevent unnecessary recalculations
+  // Only recalculate when tracks, mediaFiles, or time changes significantly (10x per second)
+  const activeElements = useMemo(() => {
     const activeElements: ActiveElement[] = [];
 
     // Iterate tracks from bottom to top so topmost track renders last (on top)
@@ -293,9 +296,7 @@ export function PreviewPanel() {
     });
 
     return activeElements;
-  };
-
-  const activeElements = getActiveElements();
+  }, [tracks, mediaFiles, currentTime, Math.floor(currentTime * 10)]);
 
   // Invalidate cache when preview quality changes
   useEffect(() => {
