@@ -119,3 +119,18 @@ export interface AIGeneratedAudio {
 export interface TTSResult {
   audio: AIGeneratedAudio;
 }
+
+// Vision captioning types
+export type NarrationStyle = "documentary" | "tiktok";
+
+export interface VisionCaptionParams {
+  image_url?: string;
+  video_url?: string;
+  prompt?: string;
+  style?: NarrationStyle;
+  duration?: number; // Video duration in seconds
+}
+
+export interface VisionCaptionResult {
+  caption: string;
+}

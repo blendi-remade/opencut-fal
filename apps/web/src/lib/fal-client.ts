@@ -1,4 +1,4 @@
-import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult, VideoBackgroundRemovalParams, VideoBackgroundRemovalResult, TTSParams, TTSResult } from "@/types/ai";
+import type { AIGenerationParams, AIGenerationResult, VideoGenerationParams, VideoGenerationResult, BackgroundRemovalParams, BackgroundRemovalResult, VideoBackgroundRemovalParams, VideoBackgroundRemovalResult, TTSParams, TTSResult, VisionCaptionParams, VisionCaptionResult } from "@/types/ai";
 
 /**
  * Convert blob URL to base64 data URI
@@ -245,6 +245,115 @@ export async function generateTTS({
     console.error("TTS generation error:", error);
     throw new Error(
       error instanceof Error ? error.message : "Failed to generate speech. Please try again."
+    );
+  }
+}
+
+/**
+ * Generate a caption/description for an image using vision AI
+ * Makes a server-side API call to protect the API key
+ */
+export async function generateImageCaption({
+  image_url,
+  prompt,
+  style,
+}: VisionCaptionParams): Promise<VisionCaptionResult> {
+  try {
+    const response = await fetch("/api/ai/caption-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        image_url,
+        prompt,
+        style,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Image caption generation failed");
+    }
+
+    const data = await response.json();
+    return data as VisionCaptionResult;
+  } catch (error) {
+    console.error("Image caption generation error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to generate image caption. Please try again."
+    );
+  }
+}
+
+/**
+ * Generate a caption/description for a video using vision AI
+ * Makes a server-side API call to protect the API key
+ */
+export async function generateVideoCaption({
+  video_url,
+  prompt,
+  style,
+  duration,
+}: VisionCaptionParams): Promise<VisionCaptionResult> {
+  try {
+    let processedVideoUrl = video_url;
+
+    // If it's a blob URL, upload it to fal.ai storage first via our server
+    if (video_url && video_url.startsWith('blob:')) {
+      console.log("Uploading video to fal.ai storage...");
+      
+      // Fetch the blob
+      const videoResponse = await fetch(video_url);
+      const videoBlob = await videoResponse.blob();
+      
+      // Create a File object
+      const videoFile = new File([videoBlob], `video-${Date.now()}.mp4`, {
+        type: videoBlob.type || 'video/mp4',
+      });
+      
+      // Upload via our server endpoint
+      const formData = new FormData();
+      formData.append('video', videoFile);
+      
+      const uploadResponse = await fetch("/api/ai/upload-video", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload video");
+      }
+
+      const uploadData = await uploadResponse.json();
+      processedVideoUrl = uploadData.url;
+      console.log("Video uploaded to fal.ai storage:", processedVideoUrl);
+    }
+
+    const response = await fetch("/api/ai/caption-video", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        video_url: processedVideoUrl,
+        prompt,
+        style,
+        duration,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Video caption generation failed");
+    }
+
+    const data = await response.json();
+    return data as VisionCaptionResult;
+  } catch (error) {
+    console.error("Video caption generation error:", error);
+    throw new Error(
+      error instanceof Error ? error.message : "Failed to generate video caption. Please try again."
     );
   }
 }

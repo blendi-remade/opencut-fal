@@ -13,10 +13,12 @@ import {
   Sparkles,
   Video,
   Eraser,
+  MessageSquareQuote,
 } from "lucide-react";
 import { useMediaStore } from "@/stores/media-store";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { usePlaybackStore } from "@/stores/playback-store";
+import { useAIStore } from "@/stores/ai-store";
 import AudioWaveform from "../audio-waveform";
 import { toast } from "sonner";
 import { TimelineElementProps, MediaElement } from "@/types/timeline";
@@ -31,6 +33,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "../../ui/context-menu";
 import { useMediaPanelStore } from "../media-panel/store";
@@ -213,6 +218,28 @@ export function TimelineElement({
     toast("Ready to animate", {
       description: "Enter a prompt to bring this image to life",
     });
+  };
+
+  const handleGenerateNarration = async (e: React.MouseEvent, style: "documentary" | "tiktok") => {
+    e.stopPropagation();
+    
+    // Check if element is an image or video
+    if (element.type !== "media") return;
+    
+    const mediaItem = mediaFiles.find((file) => file.id === element.mediaId);
+    if (!mediaItem || (mediaItem.type !== "image" && mediaItem.type !== "video")) return;
+
+    try {
+      const styleLabel = style === "documentary" ? "Documentary" : "TikTok";
+      toast.loading(`Generating ${styleLabel} narration...`, { id: "narration" });
+      const { generateNarrationFromMedia } = useAIStore.getState();
+      await generateNarrationFromMedia(mediaItem, style);
+      toast.success("Narration generated! Check the AI panel TTS tab.", { id: "narration" });
+      // Switch to AI panel TTS tab
+      setActiveTab("ai");
+    } catch (error) {
+      toast.error("Failed to generate narration", { id: "narration" });
+    }
   };
 
   const handleRemoveBackground = async (e: React.MouseEvent) => {
@@ -602,13 +629,43 @@ export function TimelineElement({
                   <Eraser className="h-4 w-4 mr-2" />
                   Remove Background
                 </ContextMenuItem>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <MessageSquareQuote className="h-4 w-4 mr-2" />
+                    Generate Narration
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem onClick={(e) => handleGenerateNarration(e, "documentary")}>
+                      🎬 Documentary
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={(e) => handleGenerateNarration(e, "tiktok")}>
+                      ✨ TikTok
+                    </ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
               </>
             )}
             {mediaItem?.type === "video" && (
-              <ContextMenuItem onClick={handleRemoveVideoBackground}>
-                <Eraser className="h-4 w-4 mr-2" />
-                Remove Background
-              </ContextMenuItem>
+              <>
+                <ContextMenuItem onClick={handleRemoveVideoBackground}>
+                  <Eraser className="h-4 w-4 mr-2" />
+                  Remove Background
+                </ContextMenuItem>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <MessageSquareQuote className="h-4 w-4 mr-2" />
+                    Generate Narration
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem onClick={(e) => handleGenerateNarration(e, "documentary")}>
+                      🎬 Documentary
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={(e) => handleGenerateNarration(e, "tiktok")}>
+                      ✨ TikTok
+                    </ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              </>
             )}
           </>
         )}

@@ -19,7 +19,7 @@ import type {
   TTSOutputFormat
 } from "@/types/ai";
 import type { MediaFile } from "@/types/media";
-import { generateImage, generateVideo, generateTTS } from "@/lib/fal-client";
+import { generateImage, generateVideo, generateTTS, generateImageCaption, generateVideoCaption } from "@/lib/fal-client";
 
 interface AIStore {
   // Mode
@@ -94,6 +94,9 @@ interface AIStore {
   generateTTSAudio: () => Promise<void>;
   addTTSToTimeline: (audioUrl: string) => Promise<void>;
   clearTTSError: () => void;
+  
+  // Vision captioning actions
+  generateNarrationFromMedia: (mediaFile: MediaFile, style?: "documentary" | "tiktok") => Promise<void>;
   
   clearProjectSession: (projectId: string | null) => void;
 }
@@ -542,6 +545,45 @@ export const useAIStore = create<AIStore>()(
       },
 
       clearTTSError: () => set({ ttsError: null }),
+      
+      // Vision captioning actions
+      generateNarrationFromMedia: async (mediaFile: MediaFile, style?: "documentary" | "tiktok") => {
+        set({ isGeneratingTTS: true, ttsError: null, mode: "tts" });
+        
+        try {
+          let caption: string;
+          
+          if (mediaFile.type === "image") {
+            const result = await generateImageCaption({ image_url: mediaFile.url, style });
+            caption = result.caption;
+          } else if (mediaFile.type === "video") {
+            // Pass video duration to help generate appropriately-length narration
+            const result = await generateVideoCaption({ 
+              video_url: mediaFile.url, 
+              style,
+              duration: mediaFile.duration 
+            });
+            caption = result.caption;
+          } else {
+            throw new Error("Only images and videos can generate narrations");
+          }
+          
+          // Set the caption as TTS text
+          set({ ttsText: caption });
+          
+          // Auto-generate TTS
+          const { generateTTSAudio } = get();
+          await generateTTSAudio();
+          
+        } catch (error) {
+          console.error("Narration generation failed:", error);
+          set({ 
+            ttsError: error instanceof Error ? error.message : "Failed to generate narration"
+          });
+        } finally {
+          set({ isGeneratingTTS: false });
+        }
+      },
       
       clearProjectSession: (projectId: string | null) => {
         const { currentProjectId, currentResult, currentVideoResult, currentTTSResult } = get();
